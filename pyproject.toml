@@ -1,0 +1,34 @@
+[project]
+name = "eecp-workspace"
+version = "0.1.0"
+description = "EECP monorepo workspace"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28,<1.0",
+    "pytest>=8.4,<10.0",
+    "pytest-cov>=6.2,<8.0",
+    "ruff>=0.12,<1.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["apps/api"]
+
+[tool.pytest.ini_options]
+testpaths = ["apps/api/test"]
+pythonpath = ["apps/api"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+

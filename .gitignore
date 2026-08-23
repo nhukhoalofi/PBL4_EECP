@@ -1,0 +1,17 @@
+.venv/
+.uv-cache/
+.uv-python/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.db
+*.db-shm
+*.db-wal
+.coverage
+htmlcov/
+node_modules/
+.next/
+*.tsbuildinfo
+.tmp_doc_review/
+doc_review_pages/

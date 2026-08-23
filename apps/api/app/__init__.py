@@ -1,0 +1,1 @@
+"""EECP backend application package."""

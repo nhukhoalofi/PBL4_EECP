@@ -1,0 +1,25 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - eecp-data:/service/data
+    environment:
+      EECP_DATABASE_PATH: /service/data/eecp.db
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    environment:
+      EECP_API_URL: http://api:8000
+
+volumes:
+  eecp-data:
