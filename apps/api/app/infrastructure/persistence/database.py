@@ -15,6 +15,17 @@ CREATE TABLE IF NOT EXISTS exam_sessions (
     version INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS agents (
+    id TEXT PRIMARY KEY,
+    hostname TEXT NOT NULL,
+    ip_address TEXT NOT NULL,
+    status TEXT NOT NULL,
+    agent_version TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_agents_status_last_seen ON agents(status, last_seen);
+
 CREATE TABLE IF NOT EXISTS commands (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
