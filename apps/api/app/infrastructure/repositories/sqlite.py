@@ -8,6 +8,7 @@ from datetime import datetime
 from app.domain.entities.agent import Agent
 from app.domain.entities.exam_session import ExamSession, canonical_json, utc_now
 from app.domain.entities.operations import AuditEvent, Command, Incident, TelemetryEvent
+from app.domain.entities.session_workstation import SessionWorkstation
 from app.domain.exceptions.errors import ConcurrencyError, EntityNotFoundError
 from app.domain.services.policies import compute_audit_hash
 from app.domain.value_objects.enums import (
@@ -41,9 +42,7 @@ class SqliteAgentRepository:
         return agent
 
     def find(self, agent_id: str) -> Agent | None:
-        row = self._connection.execute(
-            "SELECT * FROM agents WHERE id = ?", (agent_id,)
-        ).fetchone()
+        row = self._connection.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
         return self._from_row(row) if row is not None else None
 
     def save(self, agent: Agent) -> None:
@@ -133,6 +132,65 @@ class SqliteSessionRepository:
         if cursor.rowcount != 1:
             session.aggregate_version = expected_version
             raise ConcurrencyError(f"session was modified concurrently: {session.id}")
+
+    def list_all(self) -> list[ExamSession]:
+        rows = self._connection.execute(
+            "SELECT payload FROM exam_sessions ORDER BY rowid DESC"
+        ).fetchall()
+        return [ExamSession.from_dict(json.loads(row["payload"])) for row in rows]
+
+
+class SqliteSessionWorkstationRepository:
+    def __init__(self, connection: sqlite3.Connection):
+        self._connection = connection
+
+    def assign(self, assignment: SessionWorkstation) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO session_workstations(id, session_id, agent_id, assigned_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            self._values(assignment),
+        )
+
+    def assign_many(self, assignments: Sequence[SessionWorkstation]) -> None:
+        self._connection.executemany(
+            """
+            INSERT INTO session_workstations(id, session_id, agent_id, assigned_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            [self._values(assignment) for assignment in assignments],
+        )
+
+    def list_for_session(self, session_id: str) -> list[SessionWorkstation]:
+        rows = self._connection.execute(
+            """
+            SELECT id, session_id, agent_id, assigned_at
+            FROM session_workstations
+            WHERE session_id = ?
+            ORDER BY assigned_at, id
+            """,
+            (session_id,),
+        ).fetchall()
+        return [self._from_row(row) for row in rows]
+
+    @staticmethod
+    def _values(assignment: SessionWorkstation) -> tuple:
+        return (
+            assignment.id,
+            assignment.session_id,
+            assignment.agent_id,
+            assignment.assigned_at.isoformat(),
+        )
+
+    @staticmethod
+    def _from_row(row: sqlite3.Row) -> SessionWorkstation:
+        return SessionWorkstation(
+            id=row["id"],
+            session_id=row["session_id"],
+            agent_id=row["agent_id"],
+            assigned_at=datetime.fromisoformat(row["assigned_at"]),
+        )
 
 
 class SqliteCommandRepository:
@@ -415,6 +473,7 @@ class SqliteUnitOfWork:
         self._connection.execute("BEGIN IMMEDIATE")
         self.agents = SqliteAgentRepository(self._connection)
         self.sessions = SqliteSessionRepository(self._connection)
+        self.session_workstations = SqliteSessionWorkstationRepository(self._connection)
         self.commands = SqliteCommandRepository(self._connection)
         self.telemetry = SqliteTelemetryRepository(self._connection)
         self.incidents = SqliteIncidentRepository(self._connection)
