@@ -13,6 +13,7 @@ class SessionState(StrEnum):
     READY = "READY"
     DEGRADED = "DEGRADED"
     RUNNING = "RUNNING"
+    FINISHED = "FINISHED"
     RESTORING = "RESTORING"
     NORMAL = "NORMAL"
 

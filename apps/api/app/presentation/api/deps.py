@@ -7,6 +7,12 @@ from app.application.use_cases.agents.management import (
     ListAgents,
     RegisterAgent,
 )
+from app.application.use_cases.exam_sessions.management import (
+    CreateExamSession,
+    GetExamSession,
+    ListExamSessions,
+    UpdateExamSessionStatus,
+)
 from app.application.use_cases.exam_sessions.pipeline import ExamPipelineService
 
 
@@ -33,3 +39,27 @@ RegisterAgentUseCase = Annotated[RegisterAgent, Depends(get_register_agent)]
 HeartbeatAgentUseCase = Annotated[HeartbeatAgent, Depends(get_heartbeat_agent)]
 ListAgentsUseCase = Annotated[ListAgents, Depends(get_list_agents)]
 
+
+def get_create_exam_session(request: Request) -> CreateExamSession:
+    return request.app.state.container.create_exam_session
+
+
+def get_get_exam_session(request: Request) -> GetExamSession:
+    return request.app.state.container.get_exam_session
+
+
+def get_list_exam_sessions(request: Request) -> ListExamSessions:
+    return request.app.state.container.list_exam_sessions
+
+
+def get_update_exam_session_status(request: Request) -> UpdateExamSessionStatus:
+    return request.app.state.container.update_exam_session_status
+
+
+CreateExamSessionUseCase = Annotated[CreateExamSession, Depends(get_create_exam_session)]
+GetExamSessionUseCase = Annotated[GetExamSession, Depends(get_get_exam_session)]
+ListExamSessionsUseCase = Annotated[ListExamSessions, Depends(get_list_exam_sessions)]
+UpdateExamSessionStatusUseCase = Annotated[
+    UpdateExamSessionStatus,
+    Depends(get_update_exam_session_status),
+]
