@@ -27,50 +27,49 @@ class CreateExamSession:
     def __call__(self, data: CreateExamSessionInput) -> ExamSessionDetails:
         at = self._clock()
         agent_ids = [agent_id.strip() for agent_id in data.agent_ids if agent_id.strip()]
-        session = ExamSession.create_managed(data.name, data.room, agent_ids, at)
-
+        offline_ids: list[str] = []
         with self._uow_factory() as uow:
             agents = [uow.agents.get(agent_id) for agent_id in agent_ids]
-            offline_ids = []
             for agent in agents:
                 if agent.refresh_liveness(at):
                     uow.agents.save(agent)
                 if agent.status == AgentStatus.OFFLINE:
                     offline_ids.append(agent.id)
             if offline_ids:
-                raise ReadinessGateError(
-                    f"offline agents cannot be assigned: {', '.join(offline_ids)}"
+                uow.commit()
+            else:
+                session = ExamSession.create_managed(data.name, data.room, agent_ids, at)
+                uow.sessions.add(session)
+                uow.session_workstations.assign_many(
+                    [SessionWorkstation.assign(session.id, agent.id, at) for agent in agents]
+                )
+                uow.audits.append(
+                    session.id,
+                    actor=data.actor,
+                    action="SESSION_CREATED",
+                    target=session.id,
+                    details={
+                        "room_id": session.room_id,
+                        "workstations": sorted(session.workstations),
+                    },
+                )
+                uow.commit()
+                return ExamSessionDetails(
+                    session=session,
+                    agents=[
+                        AssignedAgentDetails(
+                            id=agent.id,
+                            hostname=agent.hostname,
+                            ip_address=agent.ip_address,
+                            status=agent.status,
+                            last_seen=agent.last_seen,
+                            assigned_at=at,
+                        )
+                        for agent in agents
+                    ],
                 )
 
-            uow.sessions.add(session)
-            uow.session_workstations.assign_many(
-                [SessionWorkstation.assign(session.id, agent.id, at) for agent in agents]
-            )
-            uow.audits.append(
-                session.id,
-                actor=data.actor,
-                action="SESSION_CREATED",
-                target=session.id,
-                details={
-                    "room_id": session.room_id,
-                    "workstations": sorted(session.workstations),
-                },
-            )
-            uow.commit()
-            return ExamSessionDetails(
-                session=session,
-                agents=[
-                    AssignedAgentDetails(
-                        id=agent.id,
-                        hostname=agent.hostname,
-                        ip_address=agent.ip_address,
-                        status=agent.status,
-                        last_seen=agent.last_seen,
-                        assigned_at=at,
-                    )
-                    for agent in agents
-                ],
-            )
+        raise ReadinessGateError(f"offline agents cannot be assigned: {', '.join(offline_ids)}")
 
 
 class GetExamSession:

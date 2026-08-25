@@ -72,6 +72,10 @@ def test_create_session_rejects_offline_agent(tmp_path: Path) -> None:
             CreateExamSessionInput("Exam", "A101", ["PC01"])
         )
 
+    with database.unit_of_work() as uow:
+        assert uow.agents.get("PC01").status == AgentStatus.OFFLINE
+        assert uow.sessions.list_all() == []
+
 
 def test_create_session_normalizes_agent_ids_before_lookup(tmp_path: Path) -> None:
     database = _database(tmp_path)
