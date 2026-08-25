@@ -716,7 +716,7 @@ Run: `git diff --check`
 
 Expected: no whitespace errors.
 
-Run: `uv run --package eecp-api python -c "from app.main import create_app; print(sorted(route.path for route in create_app(':memory:').routes if 'agents' in route.path))"`
+Run: `uv run --package eecp-api python -c "from app.main import create_app; paths=create_app('data/route-check.db').openapi()['paths']; print(sorted(path for path in paths if 'agents' in path))"`
 
 Expected output includes `/api/v1/agents`, `/api/v1/agents/register`, `/api/v1/agents/{agent_id}/heartbeat`, and the existing `/api/v1/agents/{target_id}/commands`.
 
