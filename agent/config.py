@@ -1,0 +1,7 @@
+import os
+
+SERVER_URL = os.getenv("EECP_SERVER_URL", "http://192.168.3.50:8000").rstrip("/")
+AGENT_ID = os.getenv("EECP_AGENT_ID", "PC01")
+AGENT_VERSION = os.getenv("EECP_AGENT_VERSION", "1.0.0")
+HEARTBEAT_INTERVAL_SECONDS = 5
+REQUEST_TIMEOUT_SECONDS = 5
