@@ -2,6 +2,8 @@ import json
 
 import pytest
 
+from agent import config as agent_config
+from agent import main as agent_main
 from agent.heartbeat import AgentClient, WorkstationIdentity, collect_identity
 from agent.main import run_agent
 
@@ -15,6 +17,57 @@ class Response:
 
     def read(self) -> bytes:
         return b"{}"
+
+
+def test_agent_id_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EECP_AGENT_ID", raising=False)
+
+    with pytest.raises(RuntimeError, match="EECP_AGENT_ID"):
+        agent_config.load_agent_id()
+
+
+def test_agent_id_cannot_be_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EECP_AGENT_ID", "   ")
+
+    with pytest.raises(RuntimeError, match="EECP_AGENT_ID"):
+        agent_config.load_agent_id()
+
+
+def test_agent_id_is_trimmed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EECP_AGENT_ID", "  PC02  ")
+
+    assert agent_config.load_agent_id() == "PC02"
+
+
+def test_main_stops_before_registration_when_agent_id_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("EECP_AGENT_ID", raising=False)
+    monkeypatch.setattr(
+        agent_main,
+        "collect_identity",
+        lambda *_args: pytest.fail("identity must not be collected without an agent id"),
+    )
+
+    with pytest.raises(SystemExit, match="EECP_AGENT_ID is required"):
+        agent_main.main()
+
+
+def test_main_uses_configured_agent_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EECP_AGENT_ID", "PC02")
+    captured_id = None
+
+    def collect(agent_id, *_args):
+        nonlocal captured_id
+        captured_id = agent_id
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(agent_main, "collect_identity", collect)
+
+    with pytest.raises(KeyboardInterrupt):
+        agent_main.main()
+
+    assert captured_id == "PC02"
 
 
 def test_agent_client_sends_registration_payload_and_heartbeat_path() -> None:

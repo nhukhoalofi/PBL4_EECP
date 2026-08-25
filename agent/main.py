@@ -5,11 +5,11 @@ from collections.abc import Callable
 from typing import Protocol
 
 from agent.config import (
-    AGENT_ID,
     AGENT_VERSION,
     HEARTBEAT_INTERVAL_SECONDS,
     REQUEST_TIMEOUT_SECONDS,
     SERVER_URL,
+    load_agent_id,
 )
 from agent.heartbeat import AgentClient, WorkstationIdentity, collect_identity
 
@@ -46,7 +46,12 @@ def run_agent(
 
 
 def main() -> None:
-    identity = collect_identity(AGENT_ID, AGENT_VERSION, SERVER_URL)
+    try:
+        agent_id = load_agent_id()
+    except RuntimeError as exc:
+        raise SystemExit(f"Configuration error: {exc}") from None
+
+    identity = collect_identity(agent_id, AGENT_VERSION, SERVER_URL)
     client = AgentClient(SERVER_URL, REQUEST_TIMEOUT_SECONDS)
     try:
         run_agent(client, identity, HEARTBEAT_INTERVAL_SECONDS)
