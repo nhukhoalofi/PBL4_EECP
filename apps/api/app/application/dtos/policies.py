@@ -17,3 +17,20 @@ class PolicyProfileDetails:
     label: str
     description: str
     rules: dict[str, Any]
+    is_builtin: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CreatePolicyProfileInput:
+    id: str
+    label: str
+    description: str
+    rules: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class UpdatePolicyProfileInput:
+    id: str
+    label: str
+    description: str
+    rules: dict[str, Any]

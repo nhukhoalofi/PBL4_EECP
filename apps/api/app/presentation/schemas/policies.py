@@ -25,6 +25,10 @@ class CommandView(ApiModel):
     payload: dict[str, Any]
     status: CommandStatus
     created_at: datetime
+    attempt_count: int
+    last_attempt_at: datetime | None
+    next_retry_at: datetime | None
+    expires_at: datetime
 
 
 class PolicyProfileView(ApiModel):
@@ -32,4 +36,18 @@ class PolicyProfileView(ApiModel):
     label: str
     description: str
     rules: dict[str, Any]
+    is_builtin: bool
     yaml: str
+
+
+class CreatePolicyProfileRequest(ApiModel):
+    id: str = Field(min_length=2, max_length=64)
+    label: str = Field(min_length=1, max_length=100)
+    description: str = Field(min_length=1, max_length=500)
+    rules: dict[str, Any]
+
+
+class UpdatePolicyProfileRequest(ApiModel):
+    label: str = Field(min_length=1, max_length=100)
+    description: str = Field(min_length=1, max_length=500)
+    rules: dict[str, Any]

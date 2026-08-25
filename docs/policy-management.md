@@ -12,10 +12,49 @@ Teacher selects Exam Profile
   -> Dashboard reports the per-Agent policy status
 ```
 
-The transport is short polling on the existing five-second Agent loop. A
-command is durable in SQLite, so an Agent that is temporarily offline receives
-it after reconnecting. This gives the requested push-command behavior without
-losing commands when a workstation is disconnected.
+The transport is short polling on the existing five-second Agent loop. Commands
+are durable in SQLite across Control Server restarts and temporary disconnects,
+subject to the Phase 3.1 delivery deadline below.
+
+## Phase 3.1 delivery guarantees
+
+The server marks a command `DELIVERED` when it is returned to an Agent. Until an
+ACK arrives, the same command becomes available again after 10 seconds. It is
+delivered at most three times and has an absolute one-minute lifetime. On the
+next Agent poll after either limit, the command becomes `TIMED_OUT`, its policy
+status becomes `FAILED`, and a `COMMAND_TIMED_OUT` audit event is recorded.
+Delivery metadata is persisted in SQLite (`attempt_count`, `last_attempt_at`,
+`next_retry_at`, and `expires_at`), including for upgraded databases.
+
+A direct-management session cannot move from `CREATED` to `READY` until every
+assigned Agent is online and has acknowledged the exact policy hash, producing
+the `APPLIED` status. The server also rejects assigning an Agent that is already
+reserved by another non-terminal session with HTTP `409` and code
+`SESSION_CONFLICT`. Finished sessions release their assignments; a workstation
+whose policy delivery failed is also released so the teacher can recover by
+creating a replacement session.
+
+## Phase 3.2 dynamic profile management
+
+Policy profiles are persisted in SQLite and managed at `/policies`. The two
+built-in recovery profiles are seeded idempotently whenever the database is
+initialized. Teachers can add reusable custom profiles, edit their rules, view
+the generated YAML, and delete profiles that have never been used by a session.
+
+The API contract is:
+
+- `GET /api/v1/policy-profiles` lists built-in and custom profiles.
+- `POST /api/v1/policy-profiles` creates a custom profile.
+- `PUT /api/v1/policy-profiles/{profile_id}` updates a custom profile.
+- `DELETE /api/v1/policy-profiles/{profile_id}` deletes an unused custom profile.
+
+Profile IDs are normalized to uppercase and may contain letters, digits, and
+underscores. The domain validates the rule sections, rejects duplicate values
+and application allow/deny overlap, and normalizes executable/category names to
+lowercase. Built-in profiles are read-only. Deleting a profile referenced by a
+session returns `409 POLICY_IN_USE`, preserving the historical policy catalog.
+Updating a custom profile affects only sessions created afterward because every
+session stores an immutable policy snapshot and hash at creation time.
 
 ## Policy profile contract
 
@@ -63,7 +102,8 @@ an unexpected hash is rejected and the command remains pending.
 Policy assignment does not replace the Phase 2 management lifecycle. A new
 session remains `CREATED` while its per-workstation policy status progresses
 from `PENDING` to `APPLIED` or `FAILED`. The teacher can observe that result on
-the session dashboard.
+the session dashboard. The `Mark Ready` action appears only after every Agent
+reports `APPLIED`.
 
 At `FINISHED`, the server creates `RESTORE_BASELINE` commands for all assigned
 Agents. Restore is idempotent. The Agent keeps a local state snapshot so the
@@ -77,9 +117,9 @@ not move session state, preventing the two lifecycle modes from being mixed.
 
 ## Clean Architecture placement
 
-- The domain profile catalog owns selectable business rules, not YAML formatting.
-- Application policy use cases list profiles, fetch commands, and process ACKs.
+- The domain profile model validates selectable business rules, not YAML formatting.
+- Application policy use cases manage profile CRUD, fetch commands, and process ACKs.
 - The presentation layer generates the YAML preview and exposes HTTP schemas/routes.
-- SQLite remains an infrastructure adapter behind the Unit of Work ports.
+- SQLite profile/command repositories remain infrastructure adapters behind Unit of Work ports.
 - The Agent application layer depends on policy-enforcement and command-client
   protocols; Windows and HTTP implementations live under `agent/infrastructure`.

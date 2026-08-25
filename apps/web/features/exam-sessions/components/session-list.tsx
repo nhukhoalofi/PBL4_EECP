@@ -55,6 +55,16 @@ export async function SessionList() {
         <div className="sessions-grid">
           {sessions.map((session) => {
             const transition = nextStatus[session.status as keyof typeof nextStatus];
+            const policyApplied = session.agents.every(
+              (agent) => agent.policy_status === "APPLIED",
+            );
+            const policyFailed = session.agents.some(
+              (agent) => agent.policy_status === "FAILED",
+            );
+            const policyBlocksReadiness =
+              session.gateway_id === null &&
+              session.status === "CREATED" &&
+              !policyApplied;
 
             return (
               <article className="session-card" key={session.id}>
@@ -127,7 +137,15 @@ export async function SessionList() {
                   )}
                 </div>
 
-                {session.gateway_id === null && transition ? (
+                {policyBlocksReadiness ? (
+                  <p className="session-policy-gate" role="status">
+                    {policyFailed
+                      ? "Policy delivery failed. Resolve the Agent before marking this session ready."
+                      : "Waiting for every Agent to acknowledge the policy."}
+                  </p>
+                ) : null}
+
+                {session.gateway_id === null && transition && !policyBlocksReadiness ? (
                   <TransitionForm
                     sessionId={session.id}
                     target={transition[0]}

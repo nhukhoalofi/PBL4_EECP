@@ -13,12 +13,12 @@ from app.domain.entities.agent import Agent
 from app.domain.entities.exam_session import ExamSession
 from app.domain.entities.operations import Command
 from app.domain.entities.session_workstation import SessionWorkstation
-from app.domain.exceptions.errors import ReadinessGateError
-from app.domain.interfaces.unit_of_work import UnitOfWork, UnitOfWorkFactory
-from app.domain.services.policy_profiles import (
-    BUILT_IN_POLICY_PROFILES,
-    PolicyProfileCatalog,
+from app.domain.exceptions.errors import (
+    PolicyValidationError,
+    ReadinessGateError,
+    SessionConflictError,
 )
+from app.domain.interfaces.unit_of_work import UnitOfWork, UnitOfWorkFactory
 from app.domain.value_objects.enums import AgentStatus, CommandType, Readiness, SessionState
 from app.domain.value_objects.primitives import utc_now
 
@@ -30,21 +30,32 @@ class CreateExamSession:
         self,
         uow_factory: UnitOfWorkFactory,
         clock: Clock = utc_now,
-        policy_profiles: PolicyProfileCatalog = BUILT_IN_POLICY_PROFILES,
     ):
         self._uow_factory = uow_factory
         self._clock = clock
-        self._policy_profiles = policy_profiles
 
     def __call__(self, data: CreateExamSessionInput) -> ExamSessionDetails:
         at = self._clock()
         session = ExamSession.create_managed(data.name, data.room, data.agent_ids, at)
-        profile = self._policy_profiles.get(data.policy_profile)
-        policy = session.assign_management_policy(profile.id, profile.rules)
         agent_ids = list(session.workstations)
         offline_ids: list[str] = []
         with self._uow_factory() as uow:
+            profile = uow.policy_profiles.find(data.policy_profile)
+            if profile is None:
+                raise PolicyValidationError(
+                    f"unknown policy profile: {data.policy_profile}"
+                )
+            policy = session.assign_management_policy(profile.id, profile.rules)
             agents = [uow.agents.get(agent_id) for agent_id in agent_ids]
+            conflicts = _active_assignment_conflicts(uow, set(agent_ids))
+            if conflicts:
+                formatted = ", ".join(
+                    f"{agent_id} ({session_id})"
+                    for agent_id, session_id in sorted(conflicts.items())
+                )
+                raise SessionConflictError(
+                    f"agents already belong to active sessions: {formatted}"
+                )
             for agent in agents:
                 if agent.refresh_liveness(at):
                     uow.agents.save(agent)
@@ -70,6 +81,7 @@ class CreateExamSession:
                                 "profile": policy.profile,
                                 "rules": policy.rules,
                             },
+                            created_at=at,
                         )
                         for agent in agents
                     ]
@@ -143,6 +155,7 @@ class UpdateExamSessionStatus:
         session_id = data.session_id.strip()
         at = self._clock()
         offline_ids: list[str] = []
+        policy_blocked: list[str] = []
         with self._uow_factory() as uow:
             session = uow.sessions.get(session_id)
             readiness_transition = (
@@ -158,16 +171,30 @@ class UpdateExamSessionStatus:
                 if offline_ids:
                     uow.commit()
                 else:
-                    self._transition(uow, session, data, at)
-                    uow.commit()
-                    return details
+                    policy_blocked = [
+                        f"{agent.id} ({agent.policy_status})"
+                        for agent in details.agents
+                        if agent.policy_status != "APPLIED"
+                    ]
+                    if policy_blocked:
+                        uow.commit()
+                    else:
+                        self._transition(uow, session, data, at)
+                        uow.commit()
+                        return details
             else:
                 details = _snapshot_details(uow, session)
                 self._transition(uow, session, data, at)
                 uow.commit()
                 return details
 
-        raise ReadinessGateError(f"offline agents block readiness: {', '.join(offline_ids)}")
+        if offline_ids:
+            raise ReadinessGateError(
+                f"offline agents block readiness: {', '.join(offline_ids)}"
+            )
+        raise ReadinessGateError(
+            f"policy must be APPLIED before readiness: {', '.join(policy_blocked)}"
+        )
 
     @staticmethod
     def _transition(
@@ -190,6 +217,7 @@ class UpdateExamSessionStatus:
                             "policy_hash": session.policy.policy_hash,
                             "baseline": "NORMAL",
                         },
+                        created_at=at,
                     )
                     for agent_id in sorted(session.workstations)
                 ]
@@ -271,3 +299,18 @@ def _policy_status(session: ExamSession, agent_id: str) -> str:
     if workstation.desired_policy_hash:
         return "PENDING"
     return "NOT_ASSIGNED"
+
+
+def _active_assignment_conflicts(
+    uow: UnitOfWork, selected_ids: set[str]
+) -> dict[str, str]:
+    conflicts: dict[str, str] = {}
+    terminal_states = {SessionState.FINISHED, SessionState.NORMAL}
+    for existing in uow.sessions.list_all():
+        if existing.state in terminal_states:
+            continue
+        for agent_id in selected_ids.intersection(existing.workstations):
+            workstation = existing.workstations[agent_id]
+            if workstation.readiness != Readiness.FAILED:
+                conflicts[agent_id] = existing.id
+    return conflicts

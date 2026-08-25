@@ -242,8 +242,10 @@ class ExamSession:
             self.updated_at = utc_now()
 
     def record_policy_failure(self, target_id: str) -> None:
-        if self.state != SessionState.DEPLOYING:
-            raise InvalidStateTransitionError("policy failure requires DEPLOYING state")
+        if self.state not in {SessionState.DEPLOYING, SessionState.DEGRADED}:
+            raise InvalidStateTransitionError(
+                "policy failure requires DEPLOYING or DEGRADED state"
+            )
         if target_id in self.workstations:
             self.workstations[target_id].readiness = Readiness.FAILED
         elif target_id != self.gateway_id:
