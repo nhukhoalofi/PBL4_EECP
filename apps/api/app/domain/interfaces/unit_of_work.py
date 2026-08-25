@@ -4,8 +4,17 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from typing import Protocol
 
+from app.domain.entities.agent import Agent
 from app.domain.entities.exam_session import ExamSession
 from app.domain.entities.operations import AuditEvent, Command, Incident, TelemetryEvent
+
+
+class AgentRepository(Protocol):
+    def add(self, agent: Agent) -> None: ...
+    def get(self, agent_id: str) -> Agent: ...
+    def find(self, agent_id: str) -> Agent | None: ...
+    def save(self, agent: Agent) -> None: ...
+    def list_all(self) -> list[Agent]: ...
 
 
 class SessionRepository(Protocol):
@@ -40,6 +49,7 @@ class AuditRepository(Protocol):
 
 
 class UnitOfWork(Protocol):
+    agents: AgentRepository
     sessions: SessionRepository
     commands: CommandRepository
     telemetry: TelemetryRepository

@@ -89,3 +89,58 @@ npm run typecheck
 npm run build
 ```
 
+## Demo Phase 1: Agent registration and heartbeat on LAN
+
+### 1. Start the Control Server at 192.168.3.50
+
+From the repository root:
+
+```powershell
+uv sync --all-packages
+uv run --package eecp-api uvicorn app.main:app --app-dir apps/api --host 0.0.0.0 --port 8000
+```
+
+In another PowerShell terminal:
+
+```powershell
+$env:EECP_API_URL="http://192.168.3.50:8000"
+cd apps/web
+npm install
+npm run dev -- --hostname 0.0.0.0
+```
+
+Allow inbound TCP ports 8000 and 3000 in Windows Firewall when other LAN machines cannot connect.
+
+### 2. Start Workstation A as PC01
+
+Clone or copy this repository to Workstation A, open PowerShell at the repository root, then run:
+
+```powershell
+$env:EECP_SERVER_URL="http://192.168.3.50:8000"
+$env:EECP_AGENT_ID="PC01"
+python -m agent.main
+```
+
+Expected workstation address for the demo: `192.168.3.56`.
+
+### 3. Start Workstation B as PC02
+
+Clone or copy this repository to Workstation B, open PowerShell at the repository root, then run:
+
+```powershell
+$env:EECP_SERVER_URL="http://192.168.3.50:8000"
+$env:EECP_AGENT_ID="PC02"
+python -m agent.main
+```
+
+Expected workstation address for the demo: `192.168.3.55`.
+
+### 4. Run the LAN demo
+
+1. Open `http://192.168.3.50:3000/workstations` on the Control Server or another LAN machine.
+2. Verify PC01 and PC02 both show `ONLINE`.
+3. Stop one workstation agent with Ctrl+C.
+4. Wait up to 20 seconds for the 15-second timeout plus the next dashboard refresh.
+5. Verify the stopped workstation shows `OFFLINE` while the other remains `ONLINE`.
+6. Restart the stopped agent and verify it returns to `ONLINE` without creating a duplicate record.
+

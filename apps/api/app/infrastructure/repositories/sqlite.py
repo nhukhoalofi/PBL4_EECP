@@ -5,12 +5,95 @@ import sqlite3
 from collections.abc import Sequence
 from datetime import datetime
 
+from app.domain.entities.agent import Agent
 from app.domain.entities.exam_session import ExamSession, canonical_json, utc_now
 from app.domain.entities.operations import AuditEvent, Command, Incident, TelemetryEvent
 from app.domain.exceptions.errors import ConcurrencyError, EntityNotFoundError
 from app.domain.services.policies import compute_audit_hash
-from app.domain.value_objects.enums import CommandStatus, CommandType, IncidentStatus, Severity
+from app.domain.value_objects.enums import (
+    AgentStatus,
+    CommandStatus,
+    CommandType,
+    IncidentStatus,
+    Severity,
+)
 from app.infrastructure.persistence.database import SqliteDatabase
+
+
+class SqliteAgentRepository:
+    def __init__(self, connection: sqlite3.Connection):
+        self._connection = connection
+
+    def add(self, agent: Agent) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO agents(
+                id, hostname, ip_address, status, agent_version, last_seen, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            self._values(agent),
+        )
+
+    def get(self, agent_id: str) -> Agent:
+        agent = self.find(agent_id)
+        if agent is None:
+            raise EntityNotFoundError(f"agent not found: {agent_id}")
+        return agent
+
+    def find(self, agent_id: str) -> Agent | None:
+        row = self._connection.execute(
+            "SELECT * FROM agents WHERE id = ?", (agent_id,)
+        ).fetchone()
+        return self._from_row(row) if row is not None else None
+
+    def save(self, agent: Agent) -> None:
+        cursor = self._connection.execute(
+            """
+            UPDATE agents
+               SET hostname = ?, ip_address = ?, status = ?, agent_version = ?,
+                   last_seen = ?, created_at = ?
+             WHERE id = ?
+            """,
+            (
+                agent.hostname,
+                agent.ip_address,
+                agent.status.value,
+                agent.agent_version,
+                agent.last_seen.isoformat(),
+                agent.created_at.isoformat(),
+                agent.id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise EntityNotFoundError(f"agent not found: {agent.id}")
+
+    def list_all(self) -> list[Agent]:
+        rows = self._connection.execute("SELECT * FROM agents ORDER BY id").fetchall()
+        return [self._from_row(row) for row in rows]
+
+    @staticmethod
+    def _values(agent: Agent) -> tuple:
+        return (
+            agent.id,
+            agent.hostname,
+            agent.ip_address,
+            agent.status.value,
+            agent.agent_version,
+            agent.last_seen.isoformat(),
+            agent.created_at.isoformat(),
+        )
+
+    @staticmethod
+    def _from_row(row: sqlite3.Row) -> Agent:
+        return Agent(
+            id=row["id"],
+            hostname=row["hostname"],
+            ip_address=row["ip_address"],
+            status=AgentStatus(row["status"]),
+            agent_version=row["agent_version"],
+            last_seen=datetime.fromisoformat(row["last_seen"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
 
 
 class SqliteSessionRepository:
@@ -330,6 +413,7 @@ class SqliteUnitOfWork:
     def __enter__(self) -> SqliteUnitOfWork:
         self._connection = self._database.connect()
         self._connection.execute("BEGIN IMMEDIATE")
+        self.agents = SqliteAgentRepository(self._connection)
         self.sessions = SqliteSessionRepository(self._connection)
         self.commands = SqliteCommandRepository(self._connection)
         self.telemetry = SqliteTelemetryRepository(self._connection)
