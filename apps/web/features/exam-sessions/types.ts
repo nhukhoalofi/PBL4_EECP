@@ -57,6 +57,7 @@ export type PolicyProfile = {
   label: string;
   description: string;
   rules: PolicyRules;
+  is_builtin: boolean;
   yaml: string;
 };
 

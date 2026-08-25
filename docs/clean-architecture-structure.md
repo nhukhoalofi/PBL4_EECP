@@ -110,13 +110,13 @@ apps/api/app/
 ├── domain/
 │   └── services/
 │       ├── policies.py             # incident/audit business rules
-│       └── policy_profiles.py      # catalog profile nghiệp vụ
+│       └── policy_profiles.py      # profile model, validation, built-in seed
 ├── application/
 │   ├── dtos/policies.py
 │   └── use_cases/policies/
-│       └── management.py           # list profile, pending command, ACK
+│       └── management.py           # profile CRUD, pending command, ACK
 ├── infrastructure/
-│   ├── repositories/sqlite.py      # command persistence adapter
+│   ├── repositories/sqlite.py      # profile/command persistence adapters
 │   └── di/container.py             # dependency composition
 └── presentation/
     ├── api/routers/policies.py     # HTTP policy/command endpoints
@@ -129,11 +129,12 @@ Các quyết định quan trọng:
 - Domain giữ profile và rule vì đây là chính sách nghiệp vụ, nhưng không biết YAML/HTTP.
 - YAML chỉ là representation phục vụ người dùng nên nằm ở `presentation`.
 - `ExamPipelineService` chỉ điều phối gateway pipeline; ACK dùng chung nằm trong policy use case và dispatch theo loại session.
-- SQLite command repository vẫn là output adapter của port trong domain.
+- SQLite profile và command repositories vẫn là output adapters của ports trong domain.
 
 Frontend tuân theo `app -> features -> components/lib`:
 
 - Server Actions của exam session nằm trong `features/exam-sessions/actions.ts`.
+- Server Actions quản lý profile nằm trong `features/policy-profiles/actions.ts`.
 - Feature không import `app` và không import nội bộ của feature khác.
 - Auto refresh dùng chung nằm trong `components/ui/auto-refresh.tsx`.
 

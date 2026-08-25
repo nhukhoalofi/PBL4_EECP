@@ -16,11 +16,13 @@ from app.application.use_cases.exam_sessions.management import (
 from app.application.use_cases.exam_sessions.pipeline import ExamPipelineService
 from app.application.use_cases.policies.management import (
     AcknowledgeCommand,
+    CreatePolicyProfile,
+    DeletePolicyProfile,
     GetPendingCommands,
     ListPolicyProfiles,
+    UpdatePolicyProfile,
 )
 from app.config import Settings
-from app.domain.services.policy_profiles import BUILT_IN_POLICY_PROFILES
 from app.infrastructure.persistence.database import SqliteDatabase
 
 
@@ -36,6 +38,9 @@ class Container:
     list_exam_sessions: ListExamSessions
     update_exam_session_status: UpdateExamSessionStatus
     list_policy_profiles: ListPolicyProfiles
+    create_policy_profile: CreatePolicyProfile
+    update_policy_profile: UpdatePolicyProfile
+    delete_policy_profile: DeletePolicyProfile
     get_pending_commands: GetPendingCommands
     acknowledge_command: AcknowledgeCommand
 
@@ -49,13 +54,14 @@ def build_container(settings: Settings) -> Container:
         register_agent=RegisterAgent(database.unit_of_work),
         heartbeat_agent=HeartbeatAgent(database.unit_of_work),
         list_agents=ListAgents(database.unit_of_work),
-        create_exam_session=CreateExamSession(
-            database.unit_of_work, policy_profiles=BUILT_IN_POLICY_PROFILES
-        ),
+        create_exam_session=CreateExamSession(database.unit_of_work),
         get_exam_session=GetExamSession(database.unit_of_work),
         list_exam_sessions=ListExamSessions(database.unit_of_work),
         update_exam_session_status=UpdateExamSessionStatus(database.unit_of_work),
-        list_policy_profiles=ListPolicyProfiles(BUILT_IN_POLICY_PROFILES),
+        list_policy_profiles=ListPolicyProfiles(database.unit_of_work),
+        create_policy_profile=CreatePolicyProfile(database.unit_of_work),
+        update_policy_profile=UpdatePolicyProfile(database.unit_of_work),
+        delete_policy_profile=DeletePolicyProfile(database.unit_of_work),
         get_pending_commands=GetPendingCommands(database.unit_of_work),
         acknowledge_command=AcknowledgeCommand(database.unit_of_work),
     )
