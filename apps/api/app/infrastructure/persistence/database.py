@@ -15,6 +15,29 @@ CREATE TABLE IF NOT EXISTS exam_sessions (
     version INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS agents (
+    id TEXT PRIMARY KEY,
+    hostname TEXT NOT NULL,
+    ip_address TEXT NOT NULL,
+    status TEXT NOT NULL,
+    agent_version TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_agents_status_last_seen ON agents(status, last_seen);
+
+CREATE TABLE IF NOT EXISTS session_workstations (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    assigned_at TEXT NOT NULL,
+    UNIQUE(session_id, agent_id),
+    FOREIGN KEY(session_id) REFERENCES exam_sessions(id),
+    FOREIGN KEY(agent_id) REFERENCES agents(id)
+);
+CREATE INDEX IF NOT EXISTS ix_session_workstations_session
+    ON session_workstations(session_id, assigned_at, id);
+
 CREATE TABLE IF NOT EXISTS commands (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
@@ -96,4 +119,3 @@ class SqliteDatabase:
         from app.infrastructure.repositories.sqlite import SqliteUnitOfWork
 
         return SqliteUnitOfWork(self)
-

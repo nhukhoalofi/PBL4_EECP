@@ -22,7 +22,7 @@ members = ["apps/api"]
 
 [tool.pytest.ini_options]
 testpaths = ["apps/api/test"]
-pythonpath = ["apps/api"]
+pythonpath = [".", "apps/api"]
 addopts = "-q"
 
 [tool.ruff]

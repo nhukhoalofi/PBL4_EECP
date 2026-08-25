@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from hashlib import sha256
 from typing import Any
-from uuid import uuid4
 
 from app.domain.exceptions.errors import (
     InvalidStateTransitionError,
@@ -13,18 +11,7 @@ from app.domain.exceptions.errors import (
     ReadinessGateError,
 )
 from app.domain.value_objects.enums import Readiness, SessionState
-
-
-def utc_now() -> datetime:
-    return datetime.now(UTC)
-
-
-def new_id(prefix: str) -> str:
-    return f"{prefix}_{uuid4().hex}"
-
-
-def canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+from app.domain.value_objects.primitives import canonical_json, new_id, utc_now
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +92,7 @@ class ExamSession:
     id: str
     exam_name: str
     room_id: str
-    gateway_id: str
+    gateway_id: str | None
     workstations: dict[str, WorkstationSession]
     state: SessionState = SessionState.CREATED
     policy: PolicyDocument | None = None
@@ -114,6 +101,7 @@ class ExamSession:
     force_started: bool = False
     force_start_reason: str | None = None
     created_at: datetime = field(default_factory=utc_now)
+    updated_at: datetime = field(default_factory=utc_now)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     aggregate_version: int = 0
@@ -133,15 +121,45 @@ class ExamSession:
             raise PolicyValidationError("at least one workstation is required")
         if len(normalized_ids) != len(set(normalized_ids)):
             raise PolicyValidationError("workstation ids must be unique")
+        at = utc_now()
         return cls(
             id=new_id("ses"),
             exam_name=exam_name.strip(),
             room_id=room_id.strip(),
             gateway_id=gateway_id.strip(),
             workstations={item: WorkstationSession(item) for item in normalized_ids},
+            created_at=at,
+            updated_at=at,
+        )
+
+    @classmethod
+    def create_managed(
+        cls, name: str, room: str, agent_ids: list[str], at: datetime
+    ) -> ExamSession:
+        normalized_ids = [item.strip() for item in agent_ids]
+        if not name.strip() or not room.strip():
+            raise PolicyValidationError("name and room are required")
+        if any(not item for item in normalized_ids):
+            raise PolicyValidationError("agent ids must not be empty")
+        if not normalized_ids:
+            raise PolicyValidationError("at least one workstation is required")
+        if len(normalized_ids) != len(set(normalized_ids)):
+            raise PolicyValidationError("workstation ids must be unique")
+        return cls(
+            id=new_id("ses"),
+            exam_name=name.strip(),
+            room_id=room.strip(),
+            gateway_id=None,
+            workstations={item: WorkstationSession(item) for item in normalized_ids},
+            created_at=at,
+            updated_at=at,
         )
 
     def deploy_policy(self, profile: str, rules: dict[str, Any]) -> PolicyDocument:
+        if self.gateway_id is None:
+            raise InvalidStateTransitionError(
+                "policy deployment requires a gateway"
+            )
         if self.state not in {SessionState.CREATED, SessionState.DEGRADED}:
             raise InvalidStateTransitionError(
                 f"cannot deploy policy while session is {self.state}"
@@ -157,7 +175,53 @@ class ExamSession:
             workstation.preflight_checks = []
             workstation.restored = False
         self.state = SessionState.DEPLOYING
+        self.updated_at = utc_now()
         return self.policy
+
+    def assign_management_policy(
+        self, profile: str, rules: dict[str, Any]
+    ) -> PolicyDocument:
+        if self.gateway_id is not None:
+            raise InvalidStateTransitionError(
+                "management policy assignment requires a direct session"
+            )
+        if self.state != SessionState.CREATED:
+            raise InvalidStateTransitionError(
+                "management policy can only be assigned while session is CREATED"
+            )
+        next_version = 1 if self.policy is None else self.policy.version + 1
+        self.policy = PolicyDocument.create(profile, rules, next_version)
+        for workstation in self.workstations.values():
+            workstation.desired_policy_hash = self.policy.policy_hash
+            workstation.actual_policy_hash = None
+            workstation.readiness = Readiness.UNKNOWN
+            workstation.restored = False
+        self.updated_at = utc_now()
+        return self.policy
+
+    def acknowledge_management_policy(self, target_id: str, policy_hash: str) -> None:
+        if self.gateway_id is not None or self.policy is None:
+            raise InvalidStateTransitionError(
+                "management policy acknowledgement requires a direct session policy"
+            )
+        self._workstation(target_id).acknowledge_policy(policy_hash)
+        self.updated_at = utc_now()
+
+    def record_management_policy_failure(self, target_id: str) -> None:
+        if self.gateway_id is not None or self.policy is None:
+            raise InvalidStateTransitionError(
+                "management policy failure requires a direct session policy"
+            )
+        self._workstation(target_id).readiness = Readiness.FAILED
+        self.updated_at = utc_now()
+
+    def acknowledge_management_restore(self, target_id: str) -> None:
+        if self.gateway_id is not None or self.state != SessionState.FINISHED:
+            raise InvalidStateTransitionError(
+                "management restore acknowledgement requires a FINISHED direct session"
+            )
+        self._workstation(target_id).restored = True
+        self.updated_at = utc_now()
 
     def acknowledge_policy(self, target_id: str, policy_hash: str) -> None:
         if self.state != SessionState.DEPLOYING or self.policy is None:
@@ -175,6 +239,7 @@ class ExamSession:
             workstation.policy_compliant for workstation in self.workstations.values()
         ):
             self.state = SessionState.PREFLIGHT
+            self.updated_at = utc_now()
 
     def record_policy_failure(self, target_id: str) -> None:
         if self.state != SessionState.DEPLOYING:
@@ -184,6 +249,7 @@ class ExamSession:
         elif target_id != self.gateway_id:
             raise PolicyValidationError(f"unknown policy target: {target_id}")
         self.state = SessionState.DEGRADED
+        self.updated_at = utc_now()
 
     def record_preflight(
         self, workstation_id: str, checks: list[PreflightCheck]
@@ -200,9 +266,12 @@ class ExamSession:
                 self.state = SessionState.DEGRADED
             else:
                 self.state = SessionState.READY
+            self.updated_at = utc_now()
         return readiness
 
     def start(self, force: bool, reason: str | None, at: datetime) -> None:
+        if self.gateway_id is None:
+            raise InvalidStateTransitionError("pipeline start requires a gateway")
         if self.state == SessionState.READY:
             self.force_started = False
         elif force and self.state == SessionState.DEGRADED:
@@ -216,12 +285,16 @@ class ExamSession:
             )
         self.state = SessionState.RUNNING
         self.started_at = at
+        self.updated_at = at
 
     def finish(self, at: datetime) -> None:
+        if self.gateway_id is None:
+            raise InvalidStateTransitionError("pipeline finish requires a gateway")
         if self.state != SessionState.RUNNING:
             raise InvalidStateTransitionError("only a RUNNING session can finish")
         self.state = SessionState.RESTORING
         self.finished_at = at
+        self.updated_at = at
         for workstation in self.workstations.values():
             workstation.restored = False
         self.gateway_restored = False
@@ -237,6 +310,30 @@ class ExamSession:
             workstation.restored for workstation in self.workstations.values()
         ):
             self.state = SessionState.NORMAL
+            self.updated_at = utc_now()
+
+    def transition_management(self, target: SessionState, at: datetime) -> None:
+        if self.gateway_id is not None:
+            raise InvalidStateTransitionError(
+                "management transitions are unavailable for pipeline sessions"
+            )
+        allowed = {
+            SessionState.CREATED: SessionState.READY,
+            SessionState.READY: SessionState.RUNNING,
+            SessionState.RUNNING: SessionState.FINISHED,
+        }
+        if allowed.get(self.state) != target:
+            raise InvalidStateTransitionError(
+                f"cannot transition management session from {self.state} to {target}"
+            )
+        self.state = target
+        if target == SessionState.RUNNING:
+            self.started_at = at
+        elif target == SessionState.FINISHED:
+            self.finished_at = at
+            for workstation in self.workstations.values():
+                workstation.restored = False
+        self.updated_at = at
 
     def _workstation(self, workstation_id: str) -> WorkstationSession:
         try:
@@ -250,6 +347,7 @@ class ExamSession:
         value = asdict(self)
         value["state"] = self.state.value
         value["created_at"] = self.created_at.isoformat()
+        value["updated_at"] = self.updated_at.isoformat()
         value["started_at"] = self.started_at.isoformat() if self.started_at else None
         value["finished_at"] = self.finished_at.isoformat() if self.finished_at else None
         for workstation in value["workstations"].values():
@@ -271,11 +369,16 @@ class ExamSession:
                 preflight_checks=checks,
                 restored=item.get("restored", False),
             )
+        gateway_id = value.get("gateway_id")
+        if gateway_id is not None:
+            if not isinstance(gateway_id, str) or not gateway_id.strip():
+                raise PolicyValidationError("gateway id must be a non-empty string or None")
+            gateway_id = gateway_id.strip()
         return cls(
             id=value["id"],
             exam_name=value["exam_name"],
             room_id=value["room_id"],
-            gateway_id=value["gateway_id"],
+            gateway_id=gateway_id,
             workstations=workstations,
             state=SessionState(value["state"]),
             policy=policy,
@@ -284,6 +387,7 @@ class ExamSession:
             force_started=value.get("force_started", False),
             force_start_reason=value.get("force_start_reason"),
             created_at=datetime.fromisoformat(value["created_at"]),
+            updated_at=datetime.fromisoformat(value.get("updated_at", value["created_at"])),
             started_at=(
                 datetime.fromisoformat(value["started_at"])
                 if value.get("started_at")

@@ -3,46 +3,83 @@ from __future__ import annotations
 from fastapi import APIRouter, status
 
 from app.application.dtos.exam_pipeline import (
-    AcknowledgeCommandInput,
     CreateSessionInput,
     DeployPolicyInput,
     StartSessionInput,
     SubmitPreflightInput,
     TelemetryInput,
 )
+from app.application.dtos.session_management import (
+    CreateExamSessionInput,
+    ExamSessionDetails,
+    UpdateExamSessionStatusInput,
+)
 from app.domain.entities.exam_session import ExamSession, PreflightCheck
-from app.domain.entities.operations import Command
-from app.presentation.api.deps import Service
+from app.presentation.api.deps import (
+    CreateExamSessionUseCase,
+    GetExamSessionUseCase,
+    ListExamSessionsUseCase,
+    Service,
+    UpdateExamSessionStatusUseCase,
+)
 from app.presentation.schemas.exam_pipeline import (
-    AcknowledgeCommandRequest,
-    CommandView,
-    CreateSessionRequest,
+    AssignedAgentView,
+    CreateManagementSessionRequest,
+    CreatePipelineSessionRequest,
     DeployPolicyRequest,
     FinishSessionRequest,
+    SessionDetailView,
     SessionView,
     StartSessionRequest,
     SubmitPreflightRequest,
     TelemetryAcceptedView,
     TelemetryRequest,
+    UpdateSessionStatusRequest,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["exam-pipeline"])
 
 
-@router.post("/sessions", response_model=SessionView, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/sessions",
+    response_model=SessionDetailView,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_session(
-    body: CreateSessionRequest,
+    body: CreateManagementSessionRequest | CreatePipelineSessionRequest,
     service: Service,
-) -> SessionView:
-    session = service.create_session(CreateSessionInput(**body.model_dump()))
-    return _session_view(session)
+    create_management: CreateExamSessionUseCase,
+    get_management: GetExamSessionUseCase,
+) -> SessionDetailView:
+    if isinstance(body, CreatePipelineSessionRequest):
+        session = service.create_session(CreateSessionInput(**body.model_dump()))
+    else:
+        details = create_management(CreateExamSessionInput(**body.model_dump()))
+        session = details.session
+    return _session_detail_view(get_management(session.id))
 
 
-@router.get("/sessions/{session_id}", response_model=SessionView)
+@router.get("/sessions", response_model=list[SessionDetailView])
+def list_sessions(use_case: ListExamSessionsUseCase) -> list[SessionDetailView]:
+    return [_session_detail_view(details) for details in use_case()]
+
+
+@router.patch("/sessions/{session_id}/status", response_model=SessionDetailView)
+def update_session_status(
+    session_id: str,
+    body: UpdateSessionStatusRequest,
+    use_case: UpdateExamSessionStatusUseCase,
+) -> SessionDetailView:
+    details = use_case(UpdateExamSessionStatusInput(session_id=session_id, **body.model_dump()))
+    return _session_detail_view(details)
+
+
+@router.get("/sessions/{session_id}", response_model=SessionDetailView)
 def get_session(
-    session_id: str, service: Service
-) -> SessionView:
-    return _session_view(service.get_session(session_id))
+    session_id: str,
+    use_case: GetExamSessionUseCase,
+) -> SessionDetailView:
+    return _session_detail_view(use_case(session_id))
 
 
 @router.post("/sessions/{session_id}/policy/deploy", response_model=SessionView)
@@ -52,25 +89,6 @@ def deploy_policy(
     service: Service,
 ) -> SessionView:
     session = service.deploy_policy(DeployPolicyInput(session_id=session_id, **body.model_dump()))
-    return _session_view(session)
-
-
-@router.get("/agents/{target_id}/commands", response_model=list[CommandView])
-def pending_commands(
-    target_id: str, service: Service
-) -> list[CommandView]:
-    return [_command_view(command) for command in service.pending_commands(target_id)]
-
-
-@router.post("/commands/{command_id}/acknowledge", response_model=SessionView)
-def acknowledge_command(
-    command_id: str,
-    body: AcknowledgeCommandRequest,
-    service: Service,
-) -> SessionView:
-    session = service.acknowledge_command(
-        AcknowledgeCommandInput(command_id=command_id, **body.model_dump())
-    )
     return _session_view(session)
 
 
@@ -140,13 +158,26 @@ def _session_view(session: ExamSession) -> SessionView:
     return SessionView.model_validate(session.to_dict())
 
 
-def _command_view(command: Command) -> CommandView:
-    return CommandView(
-        id=command.id,
-        session_id=command.session_id,
-        target_id=command.target_id,
-        type=command.type,
-        payload=command.payload,
-        status=command.status,
-        created_at=command.created_at,
+def _session_detail_view(details: ExamSessionDetails) -> SessionDetailView:
+    session = details.session
+    return SessionDetailView.model_validate(
+        {
+            **session.to_dict(),
+            "name": session.exam_name,
+            "room": session.room_id,
+            "status": session.state,
+            "agent_count": details.agent_count,
+            "agents": [
+                AssignedAgentView(
+                    id=agent.id,
+                    hostname=agent.hostname,
+                    ip_address=agent.ip_address,
+                    status=agent.status,
+                    last_seen=agent.last_seen,
+                    assigned_at=agent.assigned_at,
+                    policy_status=agent.policy_status,
+                )
+                for agent in sorted(details.agents, key=lambda item: item.id)
+            ],
+        }
     )

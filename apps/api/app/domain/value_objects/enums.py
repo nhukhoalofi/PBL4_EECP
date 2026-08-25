@@ -1,6 +1,11 @@
 from enum import StrEnum
 
 
+class AgentStatus(StrEnum):
+    ONLINE = "ONLINE"
+    OFFLINE = "OFFLINE"
+
+
 class SessionState(StrEnum):
     CREATED = "CREATED"
     DEPLOYING = "DEPLOYING"
@@ -8,6 +13,7 @@ class SessionState(StrEnum):
     READY = "READY"
     DEGRADED = "DEGRADED"
     RUNNING = "RUNNING"
+    FINISHED = "FINISHED"
     RESTORING = "RESTORING"
     NORMAL = "NORMAL"
 
