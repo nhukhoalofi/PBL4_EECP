@@ -115,9 +115,13 @@ Allow inbound TCP ports 8000 and 3000 in Windows Firewall when other LAN machine
 
 Clone or copy this repository to Workstation A, open PowerShell at the repository root, then run:
 
+`EECP_AGENT_ID` is required and has no default. The agent exits before registration
+when the variable is missing or blank.
+
 ```powershell
 $env:EECP_SERVER_URL="http://192.168.3.50:8000"
 $env:EECP_AGENT_ID="PC01"
+Write-Host $env:EECP_AGENT_ID
 python -m agent.main
 ```
 
@@ -130,6 +134,7 @@ Clone or copy this repository to Workstation B, open PowerShell at the repositor
 ```powershell
 $env:EECP_SERVER_URL="http://192.168.3.50:8000"
 $env:EECP_AGENT_ID="PC02"
+Write-Host $env:EECP_AGENT_ID
 python -m agent.main
 ```
 
