@@ -149,3 +149,112 @@ Expected workstation address for the demo: `192.168.3.55`.
 5. Verify the stopped workstation shows `OFFLINE` while the other remains `ONLINE`.
 6. Restart the stopped agent and verify it returns to `ONLINE` without creating a duplicate record.
 
+## Demo Phase 2: Exam session management on LAN
+
+Phase 2 adds teacher-managed sessions alongside the existing policy pipeline. The
+management lifecycle is `CREATED -> READY -> RUNNING -> FINISHED`. The legacy
+pipeline endpoints (policy deploy, command ACK, preflight, start, telemetry,
+finish, and summary) remain available under `/api/v1`; existing pipeline clients
+continue to use their original request shape with `exam_name`, `room_id`,
+`gateway_id`, and `workstation_ids`.
+
+### 1. Start (or restart) the Control Server
+
+From the repository root on the Control Server (`192.168.3.50`):
+
+```powershell
+uv sync --all-packages
+uv run --package eecp-api uvicorn app.main:app --app-dir apps/api --host 0.0.0.0 --port 8000
+```
+
+On every server start, the SQLite initialization runs its idempotent schema.
+That creates `session_workstations` for an existing database when it is absent;
+it does not delete existing sessions or assignments. The table stores only the
+assignment (`id`, `session_id`, `agent_id`, `assigned_at`), enforces unique
+`(session_id, agent_id)` pairs, and references both `exam_sessions` and
+`agents`.
+
+In a second PowerShell terminal, start the frontend:
+
+```powershell
+$env:EECP_API_URL="http://192.168.3.50:8000"
+Set-Location apps/web
+npm install
+npm run dev -- --hostname 0.0.0.0
+```
+
+Open the teacher workflow at `http://192.168.3.50:3000/sessions/create` and
+the session dashboard at `http://192.168.3.50:3000/sessions`.
+
+### 2. Start the required Agents with distinct IDs
+
+Use separate workstation PowerShell sessions. `EECP_AGENT_ID` is required and
+must be different for every workstation; do not run both agents with the same
+ID.
+
+On PC01 (`192.168.3.56`):
+
+```powershell
+$env:EECP_SERVER_URL="http://192.168.3.50:8000"
+$env:EECP_AGENT_ID="PC01"
+python -m agent.main
+```
+
+On PC02 (`192.168.3.55`):
+
+```powershell
+$env:EECP_SERVER_URL="http://192.168.3.50:8000"
+$env:EECP_AGENT_ID="PC02"
+python -m agent.main
+```
+
+Before creating a managed session, verify both appear as `ONLINE` at
+`http://192.168.3.50:3000/workstations` (or query `GET /api/v1/agents`).
+
+### 3. Management API example
+
+The following PowerShell example creates a management session, lists sessions,
+gets its detail, then transitions it through the supported lifecycle:
+
+```powershell
+$apiBase="http://192.168.3.50:8000"
+$createBody=@{
+  name="PBL4 Final"
+  room="A101"
+  agent_ids=@("PC01", "PC02")
+  actor="teacher"
+} | ConvertTo-Json
+
+$session=Invoke-RestMethod -Method Post -Uri "$apiBase/api/v1/sessions" -ContentType "application/json" -Body $createBody
+Invoke-RestMethod -Method Get -Uri "$apiBase/api/v1/sessions"
+Invoke-RestMethod -Method Get -Uri "$apiBase/api/v1/sessions/$($session.id)"
+
+foreach ($status in "READY", "RUNNING", "FINISHED") {
+  $statusBody=@{ status=$status; actor="teacher" } | ConvertTo-Json
+  Invoke-RestMethod -Method Patch -Uri "$apiBase/api/v1/sessions/$($session.id)/status" -ContentType "application/json" -Body $statusBody
+}
+```
+
+The `POST /api/v1/sessions` example above accepts management fields `name`,
+`room`, and `agent_ids`; the API returns `201 Created`. `GET /api/v1/sessions`
+lists sessions, `GET /api/v1/sessions/{session_id}` returns a session and its
+assigned Agent details, and `PATCH /api/v1/sessions/{session_id}/status`
+advances exactly one lifecycle state at a time.
+
+### 4. Offline readiness gate and live demo sequence
+
+An Agent that is `OFFLINE` is rejected at management-session creation with
+`409 Conflict` and code `READINESS_GATE`. A selected Agent that goes offline
+after creation also blocks `CREATED -> READY` with the same `409` and code;
+restart the Agent, wait for it to become `ONLINE`, then retry the `READY`
+transition. `RUNNING` is allowed only after `READY`, and `FINISHED` only after
+`RUNNING`; skipped or invalid transitions return `409 Conflict`.
+
+For the LAN demo:
+
+1. Confirm PC01 and PC02 are `ONLINE` on `/workstations`.
+2. Open `/sessions/create`, enter an exam name and room, select PC01 and PC02, then create the session (`CREATED`).
+3. Open `/sessions`, confirm both assigned Agents and transition to `READY`.
+4. Transition to `RUNNING`, then to `FINISHED`.
+5. To demonstrate the gate, stop either Agent with Ctrl+C, wait up to 20 seconds for offline detection, and attempt either a new creation or the `READY` transition; verify the `READINESS_GATE` response. Restart that Agent before continuing.
+
