@@ -71,6 +71,25 @@ def test_management_session_rejects_policy_deployment() -> None:
         session.deploy_policy("PROGRAMMING_EXAM", {})
 
 
+def test_management_session_rejects_pipeline_start() -> None:
+    session = ExamSession.create_managed("Exam", "A101", ["PC01"], NOW)
+    session.transition_management(SessionState.READY, NOW)
+
+    with pytest.raises(InvalidStateTransitionError, match="gateway"):
+        session.start(force=False, reason=None, at=NOW)
+
+
+def test_management_session_rejects_pipeline_finish() -> None:
+    session = ExamSession.create_managed("Exam", "A101", ["PC01"], NOW)
+    session.transition_management(SessionState.READY, NOW)
+    session.transition_management(SessionState.RUNNING, NOW)
+
+    with pytest.raises(InvalidStateTransitionError, match="gateway"):
+        session.finish(NOW)
+
+    assert session.state == SessionState.RUNNING
+
+
 def test_session_serialization_round_trips_updated_at() -> None:
     session = ExamSession.create_managed("Exam", "A101", ["PC01"], NOW)
     updated_at = NOW + timedelta(seconds=1)
@@ -90,3 +109,13 @@ def test_session_deserialization_defaults_updated_at_to_created_at() -> None:
     restored = ExamSession.from_dict(serialized)
 
     assert restored.updated_at == NOW
+
+
+@pytest.mark.parametrize("gateway_id", ["", "  "])
+def test_session_deserialization_rejects_blank_gateway_id(gateway_id: str) -> None:
+    session = ExamSession.create("Exam", "A101", "gw-a101", ["PC01"])
+    serialized = session.to_dict()
+    serialized["gateway_id"] = gateway_id
+
+    with pytest.raises(PolicyValidationError, match="gateway"):
+        ExamSession.from_dict(serialized)

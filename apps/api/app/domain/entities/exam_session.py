@@ -236,6 +236,8 @@ class ExamSession:
         return readiness
 
     def start(self, force: bool, reason: str | None, at: datetime) -> None:
+        if self.gateway_id is None:
+            raise InvalidStateTransitionError("pipeline start requires a gateway")
         if self.state == SessionState.READY:
             self.force_started = False
         elif force and self.state == SessionState.DEGRADED:
@@ -252,6 +254,8 @@ class ExamSession:
         self.updated_at = at
 
     def finish(self, at: datetime) -> None:
+        if self.gateway_id is None:
+            raise InvalidStateTransitionError("pipeline finish requires a gateway")
         if self.state != SessionState.RUNNING:
             raise InvalidStateTransitionError("only a RUNNING session can finish")
         self.state = SessionState.RESTORING
@@ -329,11 +333,16 @@ class ExamSession:
                 preflight_checks=checks,
                 restored=item.get("restored", False),
             )
+        gateway_id = value.get("gateway_id")
+        if gateway_id is not None:
+            if not isinstance(gateway_id, str) or not gateway_id.strip():
+                raise PolicyValidationError("gateway id must be a non-empty string or None")
+            gateway_id = gateway_id.strip()
         return cls(
             id=value["id"],
             exam_name=value["exam_name"],
             room_id=value["room_id"],
-            gateway_id=value.get("gateway_id"),
+            gateway_id=gateway_id,
             workstations=workstations,
             state=SessionState(value["state"]),
             policy=policy,
