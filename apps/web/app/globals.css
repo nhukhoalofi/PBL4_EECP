@@ -48,14 +48,31 @@ body {
 .pipeline__stage code { margin: 7px 0 12px; color: var(--muted); font-size: 0.68rem; }
 .pipeline__stage p { margin: 0; color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
 
+.workstations-card { padding: 28px; border: 1px solid var(--line); border-radius: 24px; background: rgba(255, 255, 255, 0.88); box-shadow: 0 24px 70px rgba(16, 38, 54, 0.08); }
+.workstations-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.workstations-card h2 { margin: 6px 0 0; font-size: 1.6rem; }
+.workstations-message { margin: 0; padding: 24px; border: 1px dashed var(--line); border-radius: 16px; color: var(--muted); background: var(--surface); }
+.workstations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.workstation { padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.workstation__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.workstation__heading h3 { margin: 5px 0 0; font-size: 1.25rem; }
+.workstation__id { margin: 0; color: var(--brand); font-family: ui-monospace, monospace; font-size: 0.82rem; font-weight: 800; }
+.workstation__details { display: grid; gap: 12px; margin: 24px 0 0; }
+.workstation__details div { display: flex; justify-content: space-between; gap: 20px; padding-top: 12px; border-top: 1px solid var(--line); }
+.workstation__details dt { color: var(--muted); font-size: 0.82rem; }
+.workstation__details dd { margin: 0; font-size: 0.88rem; font-weight: 700; text-align: right; }
+
 @media (max-width: 900px) {
   .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workstations-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 560px) {
   .page-shell { width: min(100% - 24px, 1120px); padding: 42px 0; }
   .pipeline-card { padding: 18px; }
   .pipeline-card__header { align-items: stretch; flex-direction: column; }
+  .workstations-card { padding: 18px; }
+  .workstations-card__header { align-items: stretch; flex-direction: column; }
   .pipeline { grid-template-columns: 1fr; }
   .pipeline__stage { min-height: auto; }
   .pipeline__index { margin-bottom: 14px; }
