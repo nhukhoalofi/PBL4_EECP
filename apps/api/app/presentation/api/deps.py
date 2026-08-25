@@ -14,6 +14,11 @@ from app.application.use_cases.exam_sessions.management import (
     UpdateExamSessionStatus,
 )
 from app.application.use_cases.exam_sessions.pipeline import ExamPipelineService
+from app.application.use_cases.policies.management import (
+    AcknowledgeCommand,
+    GetPendingCommands,
+    ListPolicyProfiles,
+)
 
 
 def get_pipeline_service(request: Request) -> ExamPipelineService:
@@ -62,4 +67,27 @@ ListExamSessionsUseCase = Annotated[ListExamSessions, Depends(get_list_exam_sess
 UpdateExamSessionStatusUseCase = Annotated[
     UpdateExamSessionStatus,
     Depends(get_update_exam_session_status),
+]
+
+
+def get_list_policy_profiles(request: Request) -> ListPolicyProfiles:
+    return request.app.state.container.list_policy_profiles
+
+
+def get_pending_commands(request: Request) -> GetPendingCommands:
+    return request.app.state.container.get_pending_commands
+
+
+def get_acknowledge_command(request: Request) -> AcknowledgeCommand:
+    return request.app.state.container.acknowledge_command
+
+
+ListPolicyProfilesUseCase = Annotated[
+    ListPolicyProfiles, Depends(get_list_policy_profiles)
+]
+GetPendingCommandsUseCase = Annotated[
+    GetPendingCommands, Depends(get_pending_commands)
+]
+AcknowledgeCommandUseCase = Annotated[
+    AcknowledgeCommand, Depends(get_acknowledge_command)
 ]

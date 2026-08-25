@@ -1,7 +1,7 @@
 import { StatusPill } from "@/components/ui/status-pill";
+import { AutoRefresh } from "@/components/ui/auto-refresh";
 import { getSessions } from "@/features/exam-sessions/queries";
 import type { SessionStatus } from "@/features/exam-sessions/types";
-import { AutoRefresh } from "@/features/workstations/components/auto-refresh";
 import { TransitionForm } from "./transition-form";
 
 const nextStatus = {
@@ -19,6 +19,12 @@ function statusTone(status: SessionStatus) {
     return "warning" as const;
   }
 
+  return "neutral" as const;
+}
+
+function policyTone(status: string) {
+  if (status === "APPLIED" || status === "RESTORED") return "success" as const;
+  if (status === "FAILED") return "warning" as const;
   return "neutral" as const;
 }
 
@@ -76,6 +82,14 @@ export async function SessionList() {
                     <dt>Assigned Agents</dt>
                     <dd>{session.agent_count}</dd>
                   </div>
+                  <div>
+                    <dt>Policy</dt>
+                    <dd>
+                      {session.policy
+                        ? `${session.policy.profile} · v${session.policy.version}`
+                        : "Not assigned"}
+                    </dd>
+                  </div>
                 </dl>
 
                 <div className="session-agents">
@@ -101,6 +115,10 @@ export async function SessionList() {
                             <StatusPill
                               label={session.status}
                               tone={statusTone(session.status)}
+                            />
+                            <StatusPill
+                              label={`POLICY ${agent.policy_status}`}
+                              tone={policyTone(agent.policy_status)}
                             />
                           </div>
                         </li>

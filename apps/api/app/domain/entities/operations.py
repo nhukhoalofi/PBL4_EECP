@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from app.domain.entities.exam_session import new_id, utc_now
 from app.domain.value_objects.enums import CommandStatus, CommandType, IncidentStatus, Severity
+from app.domain.value_objects.primitives import new_id, utc_now
 
 
 @dataclass(slots=True)

@@ -10,23 +10,37 @@ from app.application.dtos.session_management import (
     UpdateExamSessionStatusInput,
 )
 from app.domain.entities.agent import Agent
-from app.domain.entities.exam_session import ExamSession, utc_now
+from app.domain.entities.exam_session import ExamSession
+from app.domain.entities.operations import Command
 from app.domain.entities.session_workstation import SessionWorkstation
 from app.domain.exceptions.errors import ReadinessGateError
 from app.domain.interfaces.unit_of_work import UnitOfWork, UnitOfWorkFactory
-from app.domain.value_objects.enums import AgentStatus, SessionState
+from app.domain.services.policy_profiles import (
+    BUILT_IN_POLICY_PROFILES,
+    PolicyProfileCatalog,
+)
+from app.domain.value_objects.enums import AgentStatus, CommandType, Readiness, SessionState
+from app.domain.value_objects.primitives import utc_now
 
 Clock = Callable[[], datetime]
 
 
 class CreateExamSession:
-    def __init__(self, uow_factory: UnitOfWorkFactory, clock: Clock = utc_now):
+    def __init__(
+        self,
+        uow_factory: UnitOfWorkFactory,
+        clock: Clock = utc_now,
+        policy_profiles: PolicyProfileCatalog = BUILT_IN_POLICY_PROFILES,
+    ):
         self._uow_factory = uow_factory
         self._clock = clock
+        self._policy_profiles = policy_profiles
 
     def __call__(self, data: CreateExamSessionInput) -> ExamSessionDetails:
         at = self._clock()
         session = ExamSession.create_managed(data.name, data.room, data.agent_ids, at)
+        profile = self._policy_profiles.get(data.policy_profile)
+        policy = session.assign_management_policy(profile.id, profile.rules)
         agent_ids = list(session.workstations)
         offline_ids: list[str] = []
         with self._uow_factory() as uow:
@@ -43,6 +57,23 @@ class CreateExamSession:
                 uow.session_workstations.assign_many(
                     [SessionWorkstation.assign(session.id, agent.id, at) for agent in agents]
                 )
+                uow.commands.add_many(
+                    [
+                        Command(
+                            session_id=session.id,
+                            target_id=agent.id,
+                            type=CommandType.APPLY_POLICY,
+                            payload={
+                                "format": "eecp-policy/v1",
+                                "policy_hash": policy.policy_hash,
+                                "version": policy.version,
+                                "profile": policy.profile,
+                                "rules": policy.rules,
+                            },
+                        )
+                        for agent in agents
+                    ]
+                )
                 uow.audits.append(
                     session.id,
                     actor=data.actor,
@@ -51,6 +82,8 @@ class CreateExamSession:
                     details={
                         "room_id": session.room_id,
                         "workstations": sorted(session.workstations),
+                        "policy_profile": policy.profile,
+                        "policy_hash": policy.policy_hash,
                     },
                 )
                 uow.commit()
@@ -64,6 +97,7 @@ class CreateExamSession:
                             status=agent.status,
                             last_seen=agent.last_seen,
                             assigned_at=at,
+                            policy_status="PENDING",
                         )
                         for agent in agents
                     ],
@@ -144,6 +178,22 @@ class UpdateExamSessionStatus:
     ) -> None:
         session.transition_management(data.status, at)
         uow.sessions.save(session)
+        if data.status == SessionState.FINISHED and session.policy is not None:
+            uow.commands.add_many(
+                [
+                    Command(
+                        session_id=session.id,
+                        target_id=agent_id,
+                        type=CommandType.RESTORE_BASELINE,
+                        payload={
+                            "format": "eecp-policy/v1",
+                            "policy_hash": session.policy.policy_hash,
+                            "baseline": "NORMAL",
+                        },
+                    )
+                    for agent_id in sorted(session.workstations)
+                ]
+            )
         uow.audits.append(
             session.id,
             actor=data.actor,
@@ -179,12 +229,13 @@ def _build_details(
                     status=None,
                     last_seen=None,
                     assigned_at=assigned_at,
+                    policy_status=_policy_status(session, agent_id),
                 )
             )
             continue
         if refresh_at is not None and agent.refresh_liveness(refresh_at):
             uow.agents.save(agent)
-        agents.append(_agent_details(agent, assigned_at))
+        agents.append(_agent_details(session, agent, assigned_at))
     return ExamSessionDetails(session=session, agents=agents)
 
 
@@ -195,7 +246,9 @@ def _assignment_targets(uow: UnitOfWork, session: ExamSession) -> list[tuple[str
     return [(agent_id, None) for agent_id in sorted(session.workstations)]
 
 
-def _agent_details(agent: Agent, assigned_at: datetime | None) -> AssignedAgentDetails:
+def _agent_details(
+    session: ExamSession, agent: Agent, assigned_at: datetime | None
+) -> AssignedAgentDetails:
     return AssignedAgentDetails(
         id=agent.id,
         hostname=agent.hostname,
@@ -203,4 +256,18 @@ def _agent_details(agent: Agent, assigned_at: datetime | None) -> AssignedAgentD
         status=agent.status,
         last_seen=agent.last_seen,
         assigned_at=assigned_at,
+        policy_status=_policy_status(session, agent.id),
     )
+
+
+def _policy_status(session: ExamSession, agent_id: str) -> str:
+    workstation = session.workstations[agent_id]
+    if workstation.restored and session.state == SessionState.FINISHED:
+        return "RESTORED"
+    if workstation.policy_compliant:
+        return "APPLIED"
+    if workstation.readiness == Readiness.FAILED:
+        return "FAILED"
+    if workstation.desired_policy_hash:
+        return "PENDING"
+    return "NOT_ASSIGNED"

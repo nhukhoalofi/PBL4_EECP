@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from app.domain.entities.agent import Agent
-from app.domain.entities.exam_session import ExamSession, canonical_json, utc_now
+from app.domain.entities.exam_session import ExamSession
 from app.domain.entities.operations import AuditEvent, Command, Incident, TelemetryEvent
 from app.domain.entities.session_workstation import SessionWorkstation
 from app.domain.exceptions.errors import ConcurrencyError, EntityNotFoundError
@@ -18,6 +18,7 @@ from app.domain.value_objects.enums import (
     IncidentStatus,
     Severity,
 )
+from app.domain.value_objects.primitives import canonical_json, utc_now
 from app.infrastructure.persistence.database import SqliteDatabase
 
 
