@@ -94,6 +94,7 @@ class SessionView(ApiModel):
     force_start_reason: str | None
     workstations: dict[str, dict[str, Any]]
     created_at: datetime
+    updated_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
     aggregate_version: int
