@@ -15,3 +15,4 @@ node_modules/
 *.tsbuildinfo
 .tmp_doc_review/
 doc_review_pages/
+.worktrees/
