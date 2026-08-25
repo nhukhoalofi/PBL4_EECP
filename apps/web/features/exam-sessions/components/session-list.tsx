@@ -1,8 +1,8 @@
 import { StatusPill } from "@/components/ui/status-pill";
-import { transitionSessionAction } from "@/app/sessions/actions";
 import { getSessions } from "@/features/exam-sessions/queries";
 import type { SessionStatus } from "@/features/exam-sessions/types";
 import { AutoRefresh } from "@/features/workstations/components/auto-refresh";
+import { TransitionForm } from "./transition-form";
 
 const nextStatus = {
   CREATED: ["READY", "Mark Ready"],
@@ -87,16 +87,19 @@ export async function SessionList() {
                       {session.agents.map((agent) => (
                         <li className="session-agent" key={agent.id}>
                           <div className="session-agent__identity">
-                            <strong>{agent.hostname ?? "Unknown host"}</strong>
-                            <span>{agent.ip_address ?? "IP unavailable"}</span>
+                            <strong>{agent.id}</strong>
+                            <span>
+                              {agent.hostname ?? "Unknown host"} ·{" "}
+                              {agent.ip_address ?? "IP unavailable"}
+                            </span>
                           </div>
                           <div className="session-agent__statuses">
                             <StatusPill
-                              label={`Agent ${agent.status ?? "unavailable"}`}
+                              label={agent.status ?? "unavailable"}
                               tone={agent.status === "ONLINE" ? "success" : "warning"}
                             />
                             <StatusPill
-                              label={`Session ${session.status}`}
+                              label={session.status}
                               tone={statusTone(session.status)}
                             />
                           </div>
@@ -107,16 +110,11 @@ export async function SessionList() {
                 </div>
 
                 {session.gateway_id === null && transition ? (
-                  <form
-                    action={transitionSessionAction.bind(
-                      null,
-                      session.id,
-                      transition[0],
-                    )}
-                    className="session-card__action"
-                  >
-                    <button type="submit">{transition[1]}</button>
-                  </form>
+                  <TransitionForm
+                    sessionId={session.id}
+                    target={transition[0]}
+                    label={transition[1]}
+                  />
                 ) : null}
               </article>
             );

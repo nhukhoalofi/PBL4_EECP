@@ -26,7 +26,8 @@ class CreateExamSession:
 
     def __call__(self, data: CreateExamSessionInput) -> ExamSessionDetails:
         at = self._clock()
-        agent_ids = [agent_id.strip() for agent_id in data.agent_ids if agent_id.strip()]
+        session = ExamSession.create_managed(data.name, data.room, data.agent_ids, at)
+        agent_ids = list(session.workstations)
         offline_ids: list[str] = []
         with self._uow_factory() as uow:
             agents = [uow.agents.get(agent_id) for agent_id in agent_ids]
@@ -38,7 +39,6 @@ class CreateExamSession:
             if offline_ids:
                 uow.commit()
             else:
-                session = ExamSession.create_managed(data.name, data.room, agent_ids, at)
                 uow.sessions.add(session)
                 uow.session_workstations.assign_many(
                     [SessionWorkstation.assign(session.id, agent.id, at) for agent in agents]

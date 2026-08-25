@@ -149,9 +149,11 @@ class ExamSession:
     def create_managed(
         cls, name: str, room: str, agent_ids: list[str], at: datetime
     ) -> ExamSession:
-        normalized_ids = [item.strip() for item in agent_ids if item.strip()]
+        normalized_ids = [item.strip() for item in agent_ids]
         if not name.strip() or not room.strip():
             raise PolicyValidationError("name and room are required")
+        if any(not item for item in normalized_ids):
+            raise PolicyValidationError("agent ids must not be empty")
         if not normalized_ids:
             raise PolicyValidationError("at least one workstation is required")
         if len(normalized_ids) != len(set(normalized_ids)):

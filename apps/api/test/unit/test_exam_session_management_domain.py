@@ -37,6 +37,12 @@ def test_managed_creation_rejects_duplicate_agent_ids() -> None:
         ExamSession.create_managed("Exam", "A101", ["PC01", " PC01 "], NOW)
 
 
+@pytest.mark.parametrize("blank_agent_id", ["", "  "])
+def test_managed_creation_rejects_blank_agent_ids(blank_agent_id: str) -> None:
+    with pytest.raises(PolicyValidationError, match="empty"):
+        ExamSession.create_managed("Exam", "A101", ["PC01", blank_agent_id], NOW)
+
+
 def test_management_lifecycle_reaches_finished_in_order() -> None:
     session = ExamSession.create_managed("Exam", "A101", ["PC01"], NOW)
 

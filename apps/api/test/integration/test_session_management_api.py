@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from app.main import create_app
 from fastapi.testclient import TestClient
 
@@ -161,3 +162,68 @@ def test_create_session_rejects_mixed_management_and_pipeline_fields(tmp_path: P
         )
 
         assert response.status_code == 422
+
+
+def test_create_management_session_rejects_blank_agent_item(tmp_path: Path) -> None:
+    with TestClient(create_app(tmp_path / "blank-agent.db")) as client:
+        _register_agent(client, "PC01", "DESKTOP-ALPHA", "192.168.3.51")
+
+        response = client.post(
+            "/api/v1/sessions",
+            json={"name": "Exam", "room": "A101", "agent_ids": ["PC01", " "]},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "DOMAIN_VALIDATION"
+
+
+def test_create_management_session_validates_duplicate_unknown_agents_first(
+    tmp_path: Path,
+) -> None:
+    with TestClient(create_app(tmp_path / "duplicate-unknown.db")) as client:
+        response = client.post(
+            "/api/v1/sessions",
+            json={"name": "Exam", "room": "A101", "agent_ids": ["PC99", " PC99 "]},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "DOMAIN_VALIDATION"
+
+
+def test_create_management_session_validates_duplicate_offline_agents_without_refresh(
+    tmp_path: Path,
+) -> None:
+    with TestClient(create_app(tmp_path / "duplicate-offline.db")) as client:
+        _register_agent(client, "PC01", "DESKTOP-ALPHA", "192.168.3.51")
+        _make_agent_stale(client, "PC01")
+
+        response = client.post(
+            "/api/v1/sessions",
+            json={"name": "Exam", "room": "A101", "agent_ids": ["PC01", "PC01"]},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "DOMAIN_VALIDATION"
+        database = client.app.state.container.database
+        with database.unit_of_work() as uow:
+            assert uow.agents.get("PC01").status.value == "ONLINE"
+            assert uow.sessions.list_all() == []
+
+
+@pytest.mark.parametrize(
+    ("name", "room"),
+    [(" ", "A101"), ("Exam", " ")],
+)
+def test_create_management_session_validates_name_and_room_before_unknown_agent(
+    tmp_path: Path,
+    name: str,
+    room: str,
+) -> None:
+    with TestClient(create_app(tmp_path / f"blank-{name!r}-{room!r}.db")) as client:
+        response = client.post(
+            "/api/v1/sessions",
+            json={"name": name, "room": room, "agent_ids": ["PC99"]},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "DOMAIN_VALIDATION"

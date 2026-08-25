@@ -92,7 +92,8 @@ body {
 .session-agent__identity strong, .session-agent__identity span { overflow-wrap: anywhere; }
 .session-agent__identity span { margin-top: 3px; color: var(--muted); font-size: 0.78rem; }
 .session-agent__statuses { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.session-card__action { display: flex; justify-content: flex-end; margin-top: 20px; }
+.session-card__action { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+.session-card__action-error { flex: 1 1 12rem; min-width: 0; margin: 0; overflow-wrap: anywhere; color: #a12622; font-size: 0.82rem; }
 .session-card__action button, .session-form__submit { padding: 11px 16px; border: 1px solid var(--brand); border-radius: 11px; color: #fff; background: var(--brand); font: inherit; font-weight: 800; cursor: pointer; }
 .session-card__action button:hover, .session-form__submit:hover { background: #0f5966; }
 .session-card__action button:focus-visible, .session-form__submit:focus-visible { outline: 3px solid rgba(20, 107, 122, 0.35); outline-offset: 3px; }

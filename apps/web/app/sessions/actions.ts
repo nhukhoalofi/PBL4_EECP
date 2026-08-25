@@ -9,6 +9,7 @@ import {
 import { ApiError } from "@/lib/api-client";
 
 export type CreateSessionActionState = { error: string | null };
+export type TransitionSessionActionState = { error: string | null };
 
 const connectionError = "Không thể kết nối đến máy chủ EECP.";
 
@@ -43,12 +44,17 @@ export async function createSessionAction(
 export async function transitionSessionAction(
   sessionId: string,
   target: "READY" | "RUNNING" | "FINISHED",
-): Promise<void> {
+  _previous: TransitionSessionActionState,
+  _formData: FormData,
+): Promise<TransitionSessionActionState> {
   try {
     await updateSessionStatus(sessionId, target);
   } catch (error) {
-    throw new Error(error instanceof ApiError ? error.detail : connectionError);
+    return {
+      error: error instanceof ApiError ? error.detail : connectionError,
+    };
   }
 
   revalidatePath("/sessions");
+  return { error: null };
 }

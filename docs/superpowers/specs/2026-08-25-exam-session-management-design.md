@@ -1,6 +1,6 @@
 # Phase 2 Exam Session Management Design
 
-Date: 2026-08-25  
+Date: 2026-08-25
 Status: Approved design, pending implementation plan
 
 ## Context
@@ -355,4 +355,3 @@ npm run build
 7. Verify the dashboard shows `PC01 ONLINE READY` and `PC02 ONLINE READY`.
 8. Start the exam, then finish it, demonstrating the valid simplified lifecycle.
 9. Confirm existing policy-pipeline demo endpoints and tests still work.
-

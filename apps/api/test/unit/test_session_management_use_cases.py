@@ -18,6 +18,7 @@ from app.domain.entities.agent import Agent
 from app.domain.exceptions.errors import (
     EntityNotFoundError,
     InvalidStateTransitionError,
+    PolicyValidationError,
     ReadinessGateError,
 )
 from app.domain.value_objects.enums import AgentStatus, SessionState
@@ -86,6 +87,66 @@ def test_create_session_normalizes_agent_ids_before_lookup(tmp_path: Path) -> No
     )
 
     assert [agent.id for agent in details.agents] == ["PC01"]
+
+
+def test_create_session_validates_duplicate_unknown_agents_before_lookup(
+    tmp_path: Path,
+) -> None:
+    database = _database(tmp_path)
+
+    with pytest.raises(PolicyValidationError, match="unique"):
+        CreateExamSession(database.unit_of_work, clock=lambda: NOW)(
+            CreateExamSessionInput("Exam", "A101", ["PC99", " PC99 "])
+        )
+
+
+def test_create_session_rejects_duplicate_offline_agents_without_liveness_refresh(
+    tmp_path: Path,
+) -> None:
+    database = _database(tmp_path)
+    _register(database, "PC01", NOW - timedelta(seconds=16))
+
+    with pytest.raises(PolicyValidationError, match="unique"):
+        CreateExamSession(database.unit_of_work, clock=lambda: NOW)(
+            CreateExamSessionInput("Exam", "A101", ["PC01", " PC01 "])
+        )
+
+    with database.unit_of_work() as uow:
+        assert uow.agents.get("PC01").status == AgentStatus.ONLINE
+        assert uow.sessions.list_all() == []
+
+
+@pytest.mark.parametrize(
+    ("name", "room"),
+    [(" ", "A101"), ("Exam", " ")],
+)
+def test_create_session_validates_name_and_room_before_unknown_agent_lookup(
+    tmp_path: Path,
+    name: str,
+    room: str,
+) -> None:
+    database = _database(tmp_path)
+
+    with pytest.raises(PolicyValidationError, match="name and room"):
+        CreateExamSession(database.unit_of_work, clock=lambda: NOW)(
+            CreateExamSessionInput(name, room, ["PC99"])
+        )
+
+
+def test_create_session_rejects_blank_agent_item_without_liveness_refresh(
+    tmp_path: Path,
+) -> None:
+    database = _database(tmp_path)
+    _register(database, "PC01", NOW - timedelta(seconds=16))
+
+    with pytest.raises(PolicyValidationError, match="empty"):
+        CreateExamSession(database.unit_of_work, clock=lambda: NOW)(
+            CreateExamSessionInput("Exam", "A101", ["PC01", " "])
+        )
+
+    with database.unit_of_work() as uow:
+        assert uow.agents.get("PC01").status == AgentStatus.ONLINE
+        assert uow.sessions.list_all() == []
 
 
 def test_get_session_returns_current_agent_and_assignment_details(tmp_path: Path) -> None:
