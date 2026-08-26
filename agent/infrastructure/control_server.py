@@ -34,6 +34,26 @@ class AgentClient:
             raise OSError("control server returned an invalid command list")
         return result
 
+    def active_policy(self, agent_id: str) -> tuple[str, dict[str, Any]] | None:
+        result = self._request("GET", "/api/v1/sessions")
+        if not isinstance(result, list):
+            raise OSError("control server returned an invalid session list")
+        for session in result:
+            if not isinstance(session, dict) or session.get("status") != "RUNNING":
+                continue
+            agents = session.get("agents")
+            policy = session.get("policy")
+            if not isinstance(agents, list) or not isinstance(policy, dict):
+                continue
+            if any(
+                isinstance(agent, dict) and agent.get("id") == agent_id
+                for agent in agents
+            ):
+                session_id = session.get("id")
+                if isinstance(session_id, str):
+                    return session_id, policy
+        return None
+
     def acknowledge_command(
         self,
         command_id: str,
@@ -50,6 +70,25 @@ class AgentClient:
                 "policy_hash": policy_hash,
                 "error": error,
                 "actor": actor,
+            },
+        )
+
+    def report_policy_violation(
+        self,
+        session_id: str,
+        agent_id: str,
+        destination: str,
+    ) -> None:
+        self._post(
+            f"/api/v1/sessions/{session_id}/telemetry",
+            {
+                "workstation_id": agent_id,
+                "event_type": "POLICY_VIOLATION",
+                "severity": "WARNING",
+                "category": "PROHIBITED_WEBSITE",
+                "action": "BLOCKED",
+                "destination": destination,
+                "payload": {"source": "agent-loopback-monitor"},
             },
         )
 

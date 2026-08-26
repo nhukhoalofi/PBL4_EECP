@@ -33,9 +33,18 @@ class AssignedAgentDetails:
 
 
 @dataclass(frozen=True, slots=True)
+class PolicyViolationDetails:
+    workstation_id: str
+    destination: str | None
+    category: str
+    occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class ExamSessionDetails:
     session: ExamSession
     agents: list[AssignedAgentDetails]
+    violations: list[PolicyViolationDetails]
 
     @property
     def agent_count(self) -> int:

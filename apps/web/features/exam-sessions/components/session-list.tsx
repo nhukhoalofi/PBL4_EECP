@@ -55,6 +55,7 @@ export async function SessionList() {
         <div className="sessions-grid">
           {sessions.map((session) => {
             const transition = nextStatus[session.status as keyof typeof nextStatus];
+            const violations = session.violations ?? [];
             const policyApplied = session.agents.every(
               (agent) => agent.policy_status === "APPLIED",
             );
@@ -136,6 +137,25 @@ export async function SessionList() {
                     </ul>
                   )}
                 </div>
+
+                {violations.length > 0 ? (
+                  <section className="session-violations" aria-label="Policy violations">
+                    <h4>Policy violations</h4>
+                    <ul>
+                      {violations.map((violation, index) => (
+                        <li key={`${violation.workstation_id}-${violation.occurred_at}-${index}`}>
+                          <strong>{violation.workstation_id}</strong>
+                          <span>
+                            Attempted to access {violation.destination ?? "a blocked website"}
+                          </span>
+                          <time dateTime={violation.occurred_at}>
+                            {new Date(violation.occurred_at).toLocaleString("vi-VN")}
+                          </time>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
 
                 {policyBlocksReadiness ? (
                   <p className="session-policy-gate" role="status">

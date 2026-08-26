@@ -147,6 +147,62 @@ def test_agent_client_polls_and_acknowledges_commands() -> None:
     }
 
 
+def test_agent_client_reports_policy_violation() -> None:
+    requests = []
+
+    def open_request(request, timeout):
+        requests.append((request, timeout))
+        return Response()
+
+    client = AgentClient("http://control:8000", opener=open_request)
+
+    client.report_policy_violation("ses-1", "PC01", "chatgpt.com")
+
+    request = requests[0][0]
+    assert request.full_url.endswith("/api/v1/sessions/ses-1/telemetry")
+    assert json.loads(request.data) == {
+        "workstation_id": "PC01",
+        "event_type": "POLICY_VIOLATION",
+        "severity": "WARNING",
+        "category": "PROHIBITED_WEBSITE",
+        "action": "BLOCKED",
+        "destination": "chatgpt.com",
+        "payload": {"source": "agent-loopback-monitor"},
+    }
+
+
+def test_agent_client_finds_running_policy_for_agent() -> None:
+    class JsonResponse(Response):
+        def read(self) -> bytes:
+            return json.dumps(
+                [
+                    {
+                        "id": "ses-1",
+                        "status": "RUNNING",
+                        "agents": [{"id": "PC01"}],
+                        "policy": _agent_policy(),
+                    }
+                ]
+            ).encode()
+
+    client = AgentClient(
+        "http://control:8000",
+        opener=lambda _request, timeout: JsonResponse(),
+    )
+
+    assert client.active_policy("PC01") == ("ses-1", _agent_policy())
+    assert client.active_policy("PC02") is None
+
+
+def _agent_policy() -> dict:
+    return {
+        "profile": "INTERNET_NO_AI",
+        "rules": {"network": {"block": ["generative_ai"]}},
+        "version": 1,
+        "policy_hash": "a" * 64,
+    }
+
+
 def test_collect_identity_falls_back_to_hostname_resolution() -> None:
     def unavailable_socket(*_args, **_kwargs):
         raise OSError("no route")
