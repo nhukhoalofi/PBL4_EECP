@@ -28,6 +28,7 @@ from app.presentation.schemas.exam_pipeline import (
     CreatePipelineSessionRequest,
     DeployPolicyRequest,
     FinishSessionRequest,
+    PolicyViolationView,
     SessionDetailView,
     SessionView,
     StartSessionRequest,
@@ -178,6 +179,15 @@ def _session_detail_view(details: ExamSessionDetails) -> SessionDetailView:
                     policy_status=agent.policy_status,
                 )
                 for agent in sorted(details.agents, key=lambda item: item.id)
+            ],
+            "violations": [
+                PolicyViolationView(
+                    workstation_id=violation.workstation_id,
+                    destination=violation.destination,
+                    category=violation.category,
+                    occurred_at=violation.occurred_at,
+                )
+                for violation in details.violations
             ],
         }
     )

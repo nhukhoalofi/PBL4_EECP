@@ -72,6 +72,12 @@ export type ExamSession = {
   agent_count: number;
   agents: AssignedAgent[];
   policy: PolicyDocument | null;
+  violations?: {
+    workstation_id: string;
+    destination: string | null;
+    category: string;
+    occurred_at: string;
+  }[];
 };
 
 export type CreateSessionPayload = {

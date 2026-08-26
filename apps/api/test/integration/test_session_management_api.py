@@ -110,6 +110,42 @@ def test_update_management_session_from_created_to_ready(tmp_path: Path) -> None
         assert response.json()["status"] == "READY"
 
 
+def test_running_session_lists_agent_policy_violation(tmp_path: Path) -> None:
+    with TestClient(create_app(tmp_path / "violation.db")) as client:
+        _register_agent(client, "PC01", "DESKTOP-ALPHA", "192.168.3.51")
+        created = _create_management_session(client)
+        _apply_policy(client)
+        ready = client.patch(
+            f"/api/v1/sessions/{created['id']}/status",
+            json={"status": "READY"},
+        )
+        assert ready.status_code == 200
+        running = client.patch(
+            f"/api/v1/sessions/{created['id']}/status",
+            json={"status": "RUNNING"},
+        )
+        assert running.status_code == 200
+
+        telemetry = client.post(
+            f"/api/v1/sessions/{created['id']}/telemetry",
+            json={
+                "workstation_id": "PC01",
+                "event_type": "POLICY_VIOLATION",
+                "severity": "WARNING",
+                "category": "PROHIBITED_WEBSITE",
+                "action": "BLOCKED",
+                "destination": "chatgpt.com",
+            },
+        )
+
+        assert telemetry.status_code == 202
+        assert telemetry.json()["incident_id"] is not None
+        detail = client.get(f"/api/v1/sessions/{created['id']}")
+        assert detail.status_code == 200
+        assert detail.json()["violations"][0]["workstation_id"] == "PC01"
+        assert detail.json()["violations"][0]["destination"] == "chatgpt.com"
+
+
 def test_ready_rejects_pending_policy(tmp_path: Path) -> None:
     with TestClient(create_app(tmp_path / "pending-policy.db")) as client:
         _register_agent(client, "PC01", "DESKTOP-ALPHA", "192.168.3.51")

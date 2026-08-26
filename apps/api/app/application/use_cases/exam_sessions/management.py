@@ -7,6 +7,7 @@ from app.application.dtos.session_management import (
     AssignedAgentDetails,
     CreateExamSessionInput,
     ExamSessionDetails,
+    PolicyViolationDetails,
     UpdateExamSessionStatusInput,
 )
 from app.domain.entities.agent import Agent
@@ -113,6 +114,7 @@ class CreateExamSession:
                         )
                         for agent in agents
                     ],
+                    violations=[],
                 )
 
         raise ReadinessGateError(f"offline agents cannot be assigned: {', '.join(offline_ids)}")
@@ -264,7 +266,17 @@ def _build_details(
         if refresh_at is not None and agent.refresh_liveness(refresh_at):
             uow.agents.save(agent)
         agents.append(_agent_details(session, agent, assigned_at))
-    return ExamSessionDetails(session=session, agents=agents)
+    violations = [
+        PolicyViolationDetails(
+            workstation_id=event.workstation_id,
+            destination=event.destination,
+            category=event.category,
+            occurred_at=event.occurred_at,
+        )
+        for event in reversed(uow.telemetry.list_for_session(session.id))
+        if event.event_type == "POLICY_VIOLATION" and event.action == "BLOCKED"
+    ][:10]
+    return ExamSessionDetails(session=session, agents=agents, violations=violations)
 
 
 def _assignment_targets(uow: UnitOfWork, session: ExamSession) -> list[tuple[str, datetime | None]]:

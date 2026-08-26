@@ -1,12 +1,19 @@
 import json
+import ssl
 import subprocess
 from pathlib import Path
+
+import pytest
 
 from agent.application.policy_commands import PolicyCommandProcessor
 from agent.infrastructure.policy_enforcement import (
     POLICY_MARKER_START,
     AuditPolicyEnforcer,
     WindowsPolicyEnforcer,
+)
+from agent.infrastructure.violation_monitor import (
+    BlockedDomainMonitor,
+    extract_requested_hostname,
 )
 
 POLICY_HASH = "a" * 64
@@ -28,10 +35,18 @@ def _payload() -> dict:
 
 def test_command_processor_applies_and_acknowledges_policy(tmp_path: Path) -> None:
     acknowledgements = []
+    lifecycle = []
 
     class Client:
         def pending_commands(self, _agent_id):
-            return [{"id": "cmd-1", "type": "APPLY_POLICY", "payload": _payload()}]
+            return [
+                {
+                    "id": "cmd-1",
+                    "session_id": "ses-1",
+                    "type": "APPLY_POLICY",
+                    "payload": _payload(),
+                }
+            ]
 
         def acknowledge_command(self, command_id, **values):
             acknowledgements.append((command_id, values))
@@ -49,8 +64,21 @@ def test_command_processor_applies_and_acknowledges_policy(tmp_path: Path) -> No
         def maintain(self):
             self.maintained = True
 
+    class Monitor:
+        def activate(self, session_id, payload):
+            lifecycle.append(("activate", session_id, payload["policy_hash"]))
+
+        def deactivate(self):
+            lifecycle.append(("deactivate",))
+
     enforcer = Enforcer()
-    PolicyCommandProcessor(Client(), "PC01", enforcer, log=lambda _message: None).process_pending()
+    PolicyCommandProcessor(
+        Client(),
+        "PC01",
+        enforcer,
+        monitor=Monitor(),
+        log=lambda _message: None,
+    ).process_pending()
 
     assert acknowledgements == [
         (
@@ -63,6 +91,50 @@ def test_command_processor_applies_and_acknowledges_policy(tmp_path: Path) -> No
         )
     ]
     assert enforcer.maintained is True
+    assert lifecycle == [("activate", "ses-1", POLICY_HASH)]
+
+
+def test_violation_monitor_reports_blocked_domain_once_per_debounce_window() -> None:
+    reports = []
+    now = 100.0
+    monitor = BlockedDomainMonitor(
+        lambda session_id, hostname: reports.append((session_id, hostname)),
+        log=lambda _message: None,
+        clock=lambda: now,
+    )
+    monitor.activate("ses-1", _payload())
+
+    monitor.record_attempt("chatgpt.com")
+    monitor.record_attempt("chatgpt.com")
+    monitor.record_attempt("example.com")
+    now += 16
+    monitor.record_attempt("chatgpt.com")
+
+    assert reports == [
+        ("ses-1", "chatgpt.com"),
+        ("ses-1", "chatgpt.com"),
+    ]
+
+
+def test_violation_monitor_extracts_http_host() -> None:
+    request = b"GET / HTTP/1.1\r\nHost: chatgpt.com\r\nConnection: close\r\n\r\n"
+
+    assert extract_requested_hostname(request) == "chatgpt.com"
+
+
+def test_violation_monitor_extracts_tls_sni() -> None:
+    incoming = ssl.MemoryBIO()
+    outgoing = ssl.MemoryBIO()
+    connection = ssl.create_default_context().wrap_bio(
+        incoming,
+        outgoing,
+        server_side=False,
+        server_hostname="chatgpt.com",
+    )
+    with pytest.raises(ssl.SSLWantReadError):
+        connection.do_handshake()
+
+    assert extract_requested_hostname(outgoing.read()) == "chatgpt.com"
 
 
 def test_windows_enforcer_applies_reversible_controls(tmp_path: Path) -> None:

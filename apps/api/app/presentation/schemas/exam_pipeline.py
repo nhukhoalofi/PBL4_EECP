@@ -110,12 +110,20 @@ class AssignedAgentView(ApiModel):
     policy_status: str
 
 
+class PolicyViolationView(ApiModel):
+    workstation_id: str
+    destination: str | None
+    category: str
+    occurred_at: datetime
+
+
 class SessionDetailView(SessionView):
     name: str
     room: str
     status: SessionState
     agent_count: int
     agents: list[AssignedAgentView]
+    violations: list[PolicyViolationView]
 
 
 class ErrorView(ApiModel):
