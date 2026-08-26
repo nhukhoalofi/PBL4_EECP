@@ -4,9 +4,9 @@ from collections.abc import Sequence
 from hashlib import sha256
 from typing import Any
 
-from app.domain.entities.exam_session import canonical_json
 from app.domain.entities.operations import Incident, TelemetryEvent
 from app.domain.value_objects.enums import Severity
+from app.domain.value_objects.primitives import canonical_json
 
 
 class IncidentPolicy:

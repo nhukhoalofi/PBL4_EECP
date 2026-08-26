@@ -1,7 +1,7 @@
 import { StatusPill } from "@/components/ui/status-pill";
+import { AutoRefresh } from "@/components/ui/auto-refresh";
 import { getSessions } from "@/features/exam-sessions/queries";
 import type { SessionStatus } from "@/features/exam-sessions/types";
-import { AutoRefresh } from "@/features/workstations/components/auto-refresh";
 import { TransitionForm } from "./transition-form";
 
 const nextStatus = {
@@ -19,6 +19,12 @@ function statusTone(status: SessionStatus) {
     return "warning" as const;
   }
 
+  return "neutral" as const;
+}
+
+function policyTone(status: string) {
+  if (status === "APPLIED" || status === "RESTORED") return "success" as const;
+  if (status === "FAILED") return "warning" as const;
   return "neutral" as const;
 }
 
@@ -49,6 +55,16 @@ export async function SessionList() {
         <div className="sessions-grid">
           {sessions.map((session) => {
             const transition = nextStatus[session.status as keyof typeof nextStatus];
+            const policyApplied = session.agents.every(
+              (agent) => agent.policy_status === "APPLIED",
+            );
+            const policyFailed = session.agents.some(
+              (agent) => agent.policy_status === "FAILED",
+            );
+            const policyBlocksReadiness =
+              session.gateway_id === null &&
+              session.status === "CREATED" &&
+              !policyApplied;
 
             return (
               <article className="session-card" key={session.id}>
@@ -76,6 +92,14 @@ export async function SessionList() {
                     <dt>Assigned Agents</dt>
                     <dd>{session.agent_count}</dd>
                   </div>
+                  <div>
+                    <dt>Policy</dt>
+                    <dd>
+                      {session.policy
+                        ? `${session.policy.profile} · v${session.policy.version}`
+                        : "Not assigned"}
+                    </dd>
+                  </div>
                 </dl>
 
                 <div className="session-agents">
@@ -102,6 +126,10 @@ export async function SessionList() {
                               label={session.status}
                               tone={statusTone(session.status)}
                             />
+                            <StatusPill
+                              label={`POLICY ${agent.policy_status}`}
+                              tone={policyTone(agent.policy_status)}
+                            />
                           </div>
                         </li>
                       ))}
@@ -109,7 +137,15 @@ export async function SessionList() {
                   )}
                 </div>
 
-                {session.gateway_id === null && transition ? (
+                {policyBlocksReadiness ? (
+                  <p className="session-policy-gate" role="status">
+                    {policyFailed
+                      ? "Policy delivery failed. Resolve the Agent before marking this session ready."
+                      : "Waiting for every Agent to acknowledge the policy."}
+                  </p>
+                ) : null}
+
+                {session.gateway_id === null && transition && !policyBlocksReadiness ? (
                   <TransitionForm
                     sessionId={session.id}
                     target={transition[0]}

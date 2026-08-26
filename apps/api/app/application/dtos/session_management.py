@@ -11,6 +11,7 @@ class CreateExamSessionInput:
     room: str
     agent_ids: list[str]
     actor: str = "teacher"
+    policy_profile: str = "INTERNET_NO_AI"
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,7 @@ class AssignedAgentDetails:
     status: AgentStatus | None
     last_seen: datetime | None
     assigned_at: datetime | None
+    policy_status: str
 
 
 @dataclass(frozen=True, slots=True)
